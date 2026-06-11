@@ -1,0 +1,28 @@
+ZYVA IDE — Third-Party Notices
+==============================
+
+ZYVA is a white-labeled product. The user-facing UI carries no third-party
+branding. However, any source code or patterns adapted from open-source
+projects retain their original licenses as required. When code is copied from
+an upstream repository into src/engine/, its LICENSE/NOTICE MUST be recorded
+here and the license header kept in the copied files.
+
+Currently bundled/adapted (record as they are added):
+
+- (none yet — engine modules under src/engine/ are original ZYVA code)
+
+Planned upstream sources to integrate (permissive licenses — keep their NOTICE
+when code is copied):
+
+- Continue (Apache-2.0)        — codebase indexing / tree-sitter chunking patterns
+- Aider (Apache-2.0)           — SEARCH/REPLACE patch + repo-map patterns
+- Cline (Apache-2.0)           — TS diff-apply / checkpoint patterns
+- LangGraph.js (MIT)           — agent orchestration graph (npm dependency)
+- Qdrant + js-client (Apache-2.0) — vector database (sidecar + client)
+- Langfuse (MIT)               — observability (sidecar + SDK)
+- Vercel AI SDK (Apache-2.0)   — provider abstraction (npm dependency)
+- web-tree-sitter (MIT)        — AST parsing (npm dependency)
+
+Reminder: MIT/Apache-2.0 permit white-labeling the product, but require keeping
+the upstream LICENSE/NOTICE text in the source tree. GPL/AGPL code must NOT be
+embedded in this proprietary product.

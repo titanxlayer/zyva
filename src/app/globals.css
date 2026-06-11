@@ -1,0 +1,40 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+html, body {
+  background-color: #1e1e1e;
+  color: #cccccc;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  margin: 0;
+  height: 100vh;
+  width: 100vw;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Custom Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(121, 121, 121, 0.4);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 100, 100, 0.7);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Hide Next.js Dev Overlay from intercepting clicks in Playwright */
+nextjs-portal, [data-nextjs-dev-overlay] {
+  display: none !important;
+  pointer-events: none !important;
+}

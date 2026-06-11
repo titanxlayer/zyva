@@ -1,0 +1,36 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# next.js / build
+/.next/
+/out/
+/build
+next-env.d.ts
+
+# env & local secrets
+.env
+.env.*
+!.env.example
+zyva key.md
+.zyva/
+
+# zyva engine local data
+/.zyva-data/
+*.zyva-trace.json
+
+# third-party vendor clones (kept OUTSIDE source; never bundled)
+/vendor/
+/temp_opencode/
+opencode.zip
+
+# testing / playwright
+/test-results/
+/playwright-report/
+test-*.png
+test-preview-*.png
+
+# os
+.DS_Store
+*.log
