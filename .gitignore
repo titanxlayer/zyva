@@ -44,3 +44,6 @@ CLAUDE.md
 # desktop packaging artifacts
 /desktop/node_modules/
 /desktop/dist/
+
+# landing page is a VPS-only asset, not tracked in the app repo
+/landing/
