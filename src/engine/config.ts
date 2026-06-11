@@ -6,7 +6,9 @@
 export interface ZyvaConfig {
   cerebrasApiKey: string;
   dashscope: { apiKey: string; base: string };
-  embed: { model: string; dims: number };
+  embed: { model: string; dims: number; backend: 'dashscope' | 'local' | 'gateway' };
+  ollama: { base: string; model: string };
+  gateway: { url: string; key: string };
   rerankModel: string;
   visionEmbedModel: string;
   vectorStore: 'local' | 'qdrant';
@@ -26,6 +28,15 @@ export function getConfig(): ZyvaConfig {
     embed: {
       model: env.ZYVA_EMBED_MODEL || 'text-embedding-v4',
       dims: parseInt(env.ZYVA_EMBED_DIMS || '1024', 10),
+      backend: (env.ZYVA_EMBED_BACKEND as 'dashscope' | 'local' | 'gateway') || 'dashscope',
+    },
+    ollama: {
+      base: env.OLLAMA_BASE || 'http://localhost:11434',
+      model: env.ZYVA_LOCAL_EMBED_MODEL || 'qwen3-embedding:0.6b',
+    },
+    gateway: {
+      url: env.ZYVA_GATEWAY_URL || '',
+      key: env.ZYVA_GATEWAY_KEY || '',
     },
     rerankModel: env.ZYVA_RERANK_MODEL || 'qwen3-rerank',
     visionEmbedModel: env.ZYVA_VISION_EMBED_MODEL || 'tongyi-embedding-vision-flash',

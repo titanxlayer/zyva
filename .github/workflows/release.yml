@@ -1,0 +1,50 @@
+name: Desktop Release
+
+# Builds installers (exe / deb / AppImage / dmg) on a version tag, e.g. v0.1.0.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install web deps
+        run: npm ci
+      - name: Build Next (standalone)
+        run: npm run build
+        env:
+          CEREBRAS_API_KEY: ""
+          DASHSCOPE_API_KEY: ""
+
+      - name: Install desktop deps
+        working-directory: desktop
+        run: npm install
+
+      - name: Package desktop app
+        working-directory: desktop
+        run: npm run dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zyva-${{ matrix.os }}
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.deb
+            desktop/dist/*.AppImage
+          if-no-files-found: ignore

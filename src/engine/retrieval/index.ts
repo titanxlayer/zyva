@@ -1,6 +1,9 @@
 import crypto from 'crypto';
 import { getConfig } from '../config';
 import { DashScopeProvider } from '../providers/dashscope';
+import { OllamaEmbeddingProvider } from '../providers/ollama';
+import { ZyvaGatewayProvider } from '../providers/gateway';
+import type { EmbeddingProvider, RerankProvider } from '../providers/types';
 import { chunkFile } from './chunker';
 import {
   LocalVectorStore,
@@ -27,19 +30,40 @@ export function getVectorStore(projectPath: string): VectorStore {
   return new LocalVectorStore(projectPath);
 }
 
-function embedder() {
+/** Select the embedding backend: dashscope (cloud) | local (Ollama) | gateway. */
+function getEmbeddingProvider(): { provider: EmbeddingProvider; model: string } {
   const cfg = getConfig();
-  return new DashScopeProvider(cfg.dashscope.apiKey, cfg.dashscope.base);
+  switch (cfg.embed.backend) {
+    case 'local':
+      return { provider: new OllamaEmbeddingProvider(cfg.ollama.base), model: cfg.ollama.model };
+    case 'gateway':
+      return { provider: new ZyvaGatewayProvider(cfg.gateway.url, cfg.gateway.key), model: cfg.embed.model };
+    case 'dashscope':
+    default:
+      return { provider: new DashScopeProvider(cfg.dashscope.apiKey, cfg.dashscope.base), model: cfg.embed.model };
+  }
+}
+
+/** Reranker: gateway when in gateway mode, else DashScope. */
+function getRerankProvider(): RerankProvider | null {
+  const cfg = getConfig();
+  if (cfg.embed.backend === 'gateway' && cfg.gateway.url) {
+    return new ZyvaGatewayProvider(cfg.gateway.url, cfg.gateway.key);
+  }
+  if (cfg.dashscope.apiKey) {
+    return new DashScopeProvider(cfg.dashscope.apiKey, cfg.dashscope.base);
+  }
+  return null;
 }
 
 async function embedBatch(texts: string[]): Promise<number[][]> {
   const cfg = getConfig();
-  const provider = embedder();
+  const { provider, model } = getEmbeddingProvider();
   const out: number[][] = [];
-  // DashScope caps batch size; chunk requests at 10.
+  // Batch requests (cloud APIs cap batch size; keep modest).
   for (let i = 0; i < texts.length; i += 10) {
     const batch = texts.slice(i, i + 10);
-    const vecs = await provider.embed({ model: cfg.embed.model, input: batch, dimensions: cfg.embed.dims });
+    const vecs = await provider.embed({ model, input: batch, dimensions: cfg.embed.dims });
     out.push(...vecs);
   }
   return out;
@@ -112,35 +136,39 @@ export async function retrieve(
   const store = getVectorStore(projectPath);
   if ((await store.count()) === 0) return [];
 
-  const provider = embedder();
-  const [queryVec] = await provider.embed({ model: cfg.embed.model, input: [query], dimensions: cfg.embed.dims });
+  const { provider, model } = getEmbeddingProvider();
+  const [queryVec] = await provider.embed({ model, input: [query], dimensions: cfg.embed.dims });
   const hits = await store.search(queryVec, topK);
   if (hits.length === 0) return [];
 
   // Stage 2: rerank
-  try {
-    const ranked = await provider.rerank({
-      model: cfg.rerankModel,
-      query,
-      documents: hits.map((h) => `${h.payload.path}\n${h.payload.content}`),
-      topN: finalN,
-    });
-    return ranked.map((r) => ({
-      path: hits[r.index].payload.path,
-      content: hits[r.index].payload.content,
-      startLine: hits[r.index].payload.startLine,
-      endLine: hits[r.index].payload.endLine,
-      score: r.score,
-      reranked: true,
-    }));
-  } catch {
-    return hits.slice(0, finalN).map((h) => ({
-      path: h.payload.path,
-      content: h.payload.content,
-      startLine: h.payload.startLine,
-      endLine: h.payload.endLine,
-      score: h.score,
-      reranked: false,
-    }));
+  const reranker = getRerankProvider();
+  if (reranker) {
+    try {
+      const ranked = await reranker.rerank({
+        model: cfg.rerankModel,
+        query,
+        documents: hits.map((h) => `${h.payload.path}\n${h.payload.content}`),
+        topN: finalN,
+      });
+      return ranked.map((r) => ({
+        path: hits[r.index].payload.path,
+        content: hits[r.index].payload.content,
+        startLine: hits[r.index].payload.startLine,
+        endLine: hits[r.index].payload.endLine,
+        score: r.score,
+        reranked: true,
+      }));
+    } catch {
+      /* fall through to embedding scores */
+    }
   }
+  return hits.slice(0, finalN).map((h) => ({
+    path: h.payload.path,
+    content: h.payload.content,
+    startLine: h.payload.startLine,
+    endLine: h.payload.endLine,
+    score: h.score,
+    reranked: false,
+  }));
 }

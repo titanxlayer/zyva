@@ -34,3 +34,9 @@ test-preview-*.png
 # os
 .DS_Store
 *.log
+
+# editor / agent / local docs
+/.vscode/
+/tests/
+AGENTS.md
+CLAUDE.md

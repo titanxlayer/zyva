@@ -1,0 +1,27 @@
+{
+  "name": "zyva-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ZYVA desktop wrapper (Electron) around the Next standalone server",
+  "main": "main.js",
+  "scripts": {
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.titanxlayer.zyva",
+    "productName": "ZYVA",
+    "files": ["main.js"],
+    "extraResources": [
+      { "from": "../.next/standalone", "to": ".next/standalone" },
+      { "from": "../.next/static", "to": ".next/standalone/.next/static" },
+      { "from": "../public", "to": ".next/standalone/public" }
+    ],
+    "win": { "target": ["nsis"] },
+    "linux": { "target": ["deb", "AppImage"], "category": "Development" },
+    "mac": { "target": ["dmg"] }
+  }
+}
