@@ -40,3 +40,7 @@ test-preview-*.png
 /tests/
 AGENTS.md
 CLAUDE.md
+
+# desktop packaging artifacts
+/desktop/node_modules/
+/desktop/dist/

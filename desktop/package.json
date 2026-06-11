@@ -2,7 +2,9 @@
   "name": "zyva-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "ZYVA desktop wrapper (Electron) around the Next standalone server",
+  "description": "ZYVA — the AI IDE that never forgets",
+  "homepage": "https://github.com/titanxlayer/zyva",
+  "author": { "name": "titanxlayer", "email": "dev@titanxlayer.com" },
   "main": "main.js",
   "scripts": {
     "dist": "electron-builder"
@@ -21,7 +23,11 @@
       { "from": "../public", "to": ".next/standalone/public" }
     ],
     "win": { "target": ["nsis"] },
-    "linux": { "target": ["deb", "AppImage"], "category": "Development" },
+    "linux": {
+      "target": ["deb", "AppImage"],
+      "category": "Development",
+      "maintainer": "titanxlayer <dev@titanxlayer.com>"
+    },
     "mac": { "target": ["dmg"] }
   }
 }
