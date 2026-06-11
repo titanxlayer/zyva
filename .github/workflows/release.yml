@@ -1,10 +1,14 @@
 name: Desktop Release
 
-# Builds installers (exe / deb / AppImage / dmg) on a version tag, e.g. v0.1.0.
+# Builds installers (exe / deb / AppImage / dmg) on a version tag, e.g. v0.1.0,
+# and publishes them to a GitHub Release.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -38,7 +42,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: zyva-${{ matrix.os }}
@@ -48,3 +52,14 @@ jobs:
             desktop/dist/*.deb
             desktop/dist/*.AppImage
           if-no-files-found: ignore
+
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.deb
+            desktop/dist/*.AppImage
+          fail_on_unmatched_files: false

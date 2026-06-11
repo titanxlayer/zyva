@@ -16,18 +16,20 @@
   "build": {
     "appId": "com.titanxlayer.zyva",
     "productName": "ZYVA",
+    "icon": "build/icon.png",
     "files": ["main.js"],
     "extraResources": [
       { "from": "../.next/standalone", "to": ".next/standalone" },
       { "from": "../.next/static", "to": ".next/standalone/.next/static" },
       { "from": "../public", "to": ".next/standalone/public" }
     ],
-    "win": { "target": ["nsis"] },
+    "win": { "target": ["nsis"], "icon": "build/icon.png" },
     "linux": {
       "target": ["deb", "AppImage"],
       "category": "Development",
+      "icon": "build/icon.png",
       "maintainer": "titanxlayer <dev@titanxlayer.com>"
     },
-    "mac": { "target": ["dmg"] }
+    "mac": { "target": ["dmg"], "icon": "build/icon.png" }
   }
 }
