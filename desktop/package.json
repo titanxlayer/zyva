@@ -5,10 +5,11 @@
   "description": "ZYVA — the AI IDE that never forgets",
   "homepage": "https://github.com/titanxlayer/zyva",
   "author": { "name": "titanxlayer", "email": "dev@titanxlayer.com" },
+  "repository": { "type": "git", "url": "https://github.com/titanxlayer/zyva.git" },
   "main": "main.js",
   "scripts": {
     "prepackage": "node prepackage.mjs",
-    "dist": "node prepackage.mjs && electron-builder"
+    "dist": "node prepackage.mjs && electron-builder --publish never"
   },
   "devDependencies": {
     "electron": "^33.0.0",
