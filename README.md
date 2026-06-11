@@ -1,8 +1,11 @@
 # ZYVA
 
-**The AI IDE that never forgets.** An AI-native development environment with a VS Code–style UX, real semantic codebase memory, a bounded multi-agent coding graph, and a security-first execution layer.
+**Build apps with AI — in the cloud or on your desktop.** ZYVA is an AI coding environment with a VS Code–style workspace, real semantic codebase memory, a bounded multi-agent graph, and a security-first execution layer.
 
-ZYVA is built to run **locally on the user's machine** (desktop install) with optional cloud sync for teams. It is white-label and brings no third-party branding.
+- **Cloud IDE** (coming soon) — full browser workspace backed by 0G TEE + Firecracker VM + persistent storage. No install required.
+- **Desktop app** — same AI workspace running locally on your machine, full offline support.
+
+AI inference is powered by **[0G Private Computer](https://pc.0g.ai)** — OpenAI-compatible, every request runs inside a TEE on the 0G network. No BYOK required.
 
 ---
 
@@ -11,7 +14,7 @@ ZYVA is built to run **locally on the user's machine** (desktop install) with op
 | Layer | Technology |
 |---|---|
 | UI shell | Next.js 16 (App Router), React 19, Monaco editor, Tailwind v4, Zustand, Framer Motion |
-| Reasoning | Provider-abstracted LLMs (Cerebras GLM for testing; 0G Router / OpenAI / Anthropic pluggable) — **BYO key** |
+| Reasoning | **0G Private Computer** (`pc.0g.ai`) — OpenAI-compatible, TEE-attested. Models: MiniMax-M3, GLM-5.1, Qwen3.7-Max, Qwen3.6-Plus, DeepSeek-V4-Pro |
 | Embeddings | Qwen — `text-embedding-v4` (DashScope cloud) or local Qwen (Ollama); switchable |
 | Rerank | `qwen3-rerank` (two-stage retrieval) |
 | Vector store | Local file-backed store (default, offline) or Qdrant (server/team) |
@@ -42,7 +45,7 @@ flowchart TD
     end
 
     subgraph External["External / optional"]
-        LLM["Reasoning LLM<br/>(Cerebras / 0G / OpenAI…)"]
+        LLM["0G Private Computer<br/>(pc.0g.ai — TEE-attested)<br/>MiniMax-M3 · GLM-5.1 · Qwen3.7-Max<br/>Qwen3.6-Plus · DeepSeek-V4-Pro"]
         EMB["Qwen embeddings<br/>(DashScope or local Ollama)"]
         QD["Qdrant (optional)"]
         LF["Langfuse (optional)"]
@@ -109,7 +112,7 @@ Hard bounds: max steps, max retries, token caps, **no recursive self-invocation*
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in keys
+cp .env.example .env.local   # add your 0G Private Computer API key
 npm run dev                  # http://localhost:3000
 ```
 
@@ -119,7 +122,9 @@ See `.env.example`. Key variables:
 
 | Var | Purpose |
 |---|---|
-| `CEREBRAS_API_KEY` | reasoning (testing) |
+| `OG_PC_API_KEY` | 0G Private Computer API key — get from [pc.0g.ai](https://pc.0g.ai) |
+| `OG_PC_BASE_URL` | `https://pc.0g.ai/v1` (default) |
+| `OG_PC_MODEL` | default model (e.g. `minimax-m3`, `glm-5.1`, `qwen3.7-max`, `qwen3.6-plus`, `deepseek-v4-pro`) |
 | `DASHSCOPE_API_KEY` / `DASHSCOPE_BASE` | Qwen embeddings + rerank |
 | `ZYVA_EMBED_BACKEND` | `dashscope` \| `local` (Ollama) \| `gateway` |
 | `ZYVA_EMBED_MODEL` / `ZYVA_EMBED_DIMS` | embedding model + dimensions (default 1024) |
