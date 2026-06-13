@@ -735,7 +735,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
         }
 
         if (chainSwitchFailed) {
-          throw new Error('Gagal pindah ke jaringan 0G Mainnet. Silakan tambahkan/pindah network secara manual di MetaMask lu.');
+          throw new Error('Failed to switch to 0G Mainnet. Please add/switch the network manually in MetaMask.');
         }
 
         set({
@@ -749,14 +749,14 @@ export const useIdeStore = create<IdeState>((set, get) => ({
         console.error('MetaMask connection failed:', err);
         let errorMsg = err.message || 'MetaMask connection rejected or failed';
         if (err.code === -32002 || (err.message && err.message.toLowerCase().includes('pending'))) {
-          errorMsg = 'MetaMask lagi nunggu approval lu! Coba BUKA EXTENSION METAMASK di pojok kanan atas browser lu sekarang, ada popup yang nunggu di-klik.';
+          errorMsg = 'MetaMask is waiting for approval. Open the MetaMask extension (top-right of your browser) — there is a popup waiting to be clicked.';
         } else if (err.code === 4001) {
-          errorMsg = 'Koneksi ditolak. Lu klik Cancel di MetaMask ya?';
+          errorMsg = 'Connection rejected. Did you click Cancel in MetaMask?';
         }
         set({ walletError: errorMsg });
       }
     } else {
-      set({ walletError: 'MetaMask extension nggak kedetect. Pastiin lu udah install MetaMask.' });
+      set({ walletError: 'MetaMask extension not detected. Make sure MetaMask is installed.' });
     }
   },
     
@@ -1560,11 +1560,11 @@ export const useIdeStore = create<IdeState>((set, get) => ({
           const autoName = 'zyva-project';
           set(state => ({
             terminalLogs: [...state.terminalLogs,
-              `⚡ Belum ada project — membuat project "${autoName}" otomatis...`]
+              `⚡ No project open — creating "${autoName}" automatically...`]
           }));
           await get().createNewProject(autoName, 'react');
           projectPath = get().projectPath;
-          if (!projectPath) throw new Error('Gagal membuat project otomatis');
+          if (!projectPath) throw new Error('Failed to auto-create project');
         }
 
         // Write file to disk
@@ -1579,7 +1579,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
           })
         });
         const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Gagal menyimpan file');
+        if (!data.success) throw new Error(data.error || 'Failed to save file');
 
         // Update in-memory state & open the file
         set((state) => ({
@@ -1593,7 +1593,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
 
         updateActionStatus('applied');
         set(state => ({
-          terminalLogs: [...state.terminalLogs, `✓ Agent menulis file: ${action.path}`]
+          terminalLogs: [...state.terminalLogs, `✓ Agent wrote file: ${action.path}`]
         }));
         return;
       }
@@ -1603,7 +1603,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
         let projectPath = get().projectPath;
 
         if (!projectPath) {
-          throw new Error('Workspace Inactive: Buka atau buat project terlebih dahulu sebelum mengedit file.');
+          throw new Error('Workspace inactive: open or create a project before editing files.');
         }
 
         // Fetch workspace to ensure we have the latest file contents
@@ -1611,7 +1611,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
         let content = get().fileContents[action.path];
 
         if (content === undefined) {
-          throw new Error(`File ${action.path} tidak ditemukan di workspace.`);
+          throw new Error(`File ${action.path} not found in workspace.`);
         }
 
         let updatedContent = content;
@@ -1625,12 +1625,12 @@ export const useIdeStore = create<IdeState>((set, get) => ({
 
           const index = normContent.indexOf(normOld);
           if (index === -1) {
-            throw new Error(`Teks SEARCH tidak ditemukan di dalam file ${action.path}. Pastikan teks yang dicari cocok persis.`);
+            throw new Error(`SEARCH text not found in ${action.path}. Make sure it matches exactly.`);
           }
 
           const lastIndex = normContent.lastIndexOf(normOld);
           if (index !== lastIndex) {
-            throw new Error(`Teks SEARCH ditemukan lebih dari sekali di ${action.path}. Berikan baris sekitar yang lebih unik.`);
+            throw new Error(`SEARCH text matched multiple times in ${action.path}. Provide more unique surrounding lines.`);
           }
 
           // Replace in content
@@ -1645,7 +1645,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
             if (targetContent.includes(targetOld)) {
               updatedContent = targetContent.replace(targetOld, targetNew);
             } else {
-              throw new Error(`Gagal melakukan pencocokan teks di ${action.path} meskipun normalisasi baris baru dicoba.`);
+              throw new Error(`Failed to match text in ${action.path} even after newline normalization.`);
             }
           }
         }
@@ -1662,7 +1662,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
           })
         });
         const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Gagal menyimpan file hasil edit');
+        if (!data.success) throw new Error(data.error || 'Failed to save edited file');
 
         // Update in-memory state & open the file
         set((state) => ({

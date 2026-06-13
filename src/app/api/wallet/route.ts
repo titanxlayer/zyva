@@ -44,7 +44,7 @@ export async function GET() {
     if (!privateKey) {
       return NextResponse.json({ 
         success: false, 
-        error: 'File private key tidak ditemukan di folder Documents. Simpan private key kamu sebagai "private key test.txt".' 
+        error: 'Private key file not found in the Documents folder. Save your private key as "private key test.txt".' 
       }, { status: 404 });
     }
 
