@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import { requireAuth } from '@/lib/auth-guard';
-import { assertInsideWorkspace } from '@/lib/workspace-isolation';
+import { assertInsideWorkspace, ensureUserWorkspaceSync, getUserProjectPath } from '@/lib/workspace-isolation';
 import { getGitHubToken, getGitHubUser, ensureGitHubRepo } from '@/lib/github';
-import { ensureRepo, getStatus, setIdentity, commitAll, pushToGitHub } from '@/engine/git/gitOps';
+import { ensureRepo, getStatus, setIdentity, commitAll, pushToGitHub, cloneRepo } from '@/engine/git/gitOps';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -25,6 +25,38 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { action, projectPath } = body as { action: string; projectPath: string };
+
+    // ── clone (import a GitHub repo into the user's workspace) ───────────────
+    // Handled before the projectPath check since the path is derived here.
+    if (action === 'clone') {
+      const fs = await import('fs');
+      let repoUrl = String(body.repoUrl || '').trim();
+      // Accept "owner/repo" shorthand
+      if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repoUrl)) {
+        repoUrl = `https://github.com/${repoUrl}`;
+      }
+      // Strict allow-list: only public github.com https URLs (prevents injection/SSRF)
+      const m = repoUrl.match(/^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/);
+      if (!m) {
+        return NextResponse.json({ success: false, error: 'Enter a valid GitHub repo URL (https://github.com/owner/repo)' }, { status: 400 });
+      }
+      const repoName = m[2].replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64);
+      const branch = typeof body.branch === 'string' ? body.branch : undefined;
+
+      const workspaceRoot = ensureUserWorkspaceSync(userId);
+      const dest = getUserProjectPath(userId, repoName);
+      if (fs.existsSync(dest)) {
+        return NextResponse.json({ success: false, error: `A project named "${repoName}" already exists in your workspace.` }, { status: 409 });
+      }
+
+      // Private repos need the user's GitHub token; public repos clone tokenless.
+      const token = await getGitHubToken(userId);
+      const result = await cloneRepo(workspaceRoot, dest, repoUrl, token || undefined, branch);
+      if (!result.ok) {
+        return NextResponse.json({ success: false, error: result.stderr || result.error || 'Clone failed' }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, projectPath: dest.replace(/\\/g, '/'), name: repoName, repoUrl });
+    }
 
     if (!projectPath) {
       return NextResponse.json({ success: false, error: 'projectPath required' }, { status: 400 });

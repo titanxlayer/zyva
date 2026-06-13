@@ -126,6 +126,7 @@ export interface IdeState {
   // UI Modals & Popups
   isProjectDropdownOpen: boolean;
   isCreateProjectModalOpen: boolean;
+  isImportRepoModalOpen: boolean;
   isCommandPaletteOpen: boolean;
   isWalletModalOpen: boolean;
 
@@ -171,10 +172,12 @@ export interface IdeState {
   // Project Actions
   setProjectDropdownOpen: (open: boolean) => void;
   setCreateProjectModalOpen: (open: boolean) => void;
+  setImportRepoModalOpen: (open: boolean) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setWalletModalOpen: (open: boolean) => void;
   connectWalletFallback: () => Promise<boolean>;
   createNewProject: (name: string, template: 'react' | 'rust' | 'python', parentPath?: string, designIntent?: string) => Promise<void>;
+  cloneFromGitHub: (repoUrl: string) => Promise<{ ok: boolean; error?: string }>;
   newChatConversation: () => void;
   loadWorkspace: (customPath?: string) => Promise<void>;
   saveActiveFile: () => Promise<void>;
@@ -600,6 +603,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
 
   isProjectDropdownOpen: false,
   isCreateProjectModalOpen: false,
+  isImportRepoModalOpen: false,
   isCommandPaletteOpen: false,
   isWalletModalOpen: false,
 
@@ -1642,6 +1646,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
 
   setProjectDropdownOpen: (open) => set({ isProjectDropdownOpen: open }),
   setCreateProjectModalOpen: (open) => set({ isCreateProjectModalOpen: open }),
+  setImportRepoModalOpen: (open) => set({ isImportRepoModalOpen: open }),
   setCommandPaletteOpen: (open) => set({ isCommandPaletteOpen: open }),
 
   loadWorkspace: async (customPath) => {
@@ -1756,6 +1761,31 @@ export const useIdeStore = create<IdeState>((set, get) => ({
           `⚠️ Save failed (mock mode): ${activeFile}`
         ]
       });
+    }
+  },
+
+  cloneFromGitHub: async (repoUrl) => {
+    const url = (repoUrl || '').trim();
+    if (!url) return { ok: false, error: 'Enter a repository URL' };
+    set((s) => ({ terminalLogs: [...s.terminalLogs, `$ git clone ${url}`, 'Cloning repository into your workspace…'] }));
+    try {
+      const res = await fetch('/api/git', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clone', repoUrl: url }),
+      });
+      const data = await res.json();
+      if (!data.success || !data.projectPath) {
+        set((s) => ({ terminalLogs: [...s.terminalLogs, `✗ Clone failed: ${data.error || 'unknown error'}`] }));
+        return { ok: false, error: data.error || 'Clone failed' };
+      }
+      set((s) => ({ terminalLogs: [...s.terminalLogs, `✓ Cloned ${data.name}. Loading workspace…`], isCreateProjectModalOpen: false, isProjectDropdownOpen: false }));
+      await get().loadWorkspace(data.projectPath);
+      return { ok: true };
+    } catch (e) {
+      const msg = (e as Error).message || 'Network error';
+      set((s) => ({ terminalLogs: [...s.terminalLogs, `✗ Clone failed: ${msg}`] }));
+      return { ok: false, error: msg };
     }
   },
 

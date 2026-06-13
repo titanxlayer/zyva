@@ -219,6 +219,13 @@ export default function SidebarPanel() {
                   Create Project
                 </button>
                 <button
+                  data-testid="sidebar-import-repo"
+                  onClick={() => store.setImportRepoModalOpen(true)}
+                  className="w-full text-[12px] px-3 py-2 bg-[#2a2d2e] hover:bg-[#323537] border border-zinc-700/60 text-zinc-300 rounded-lg transition-colors cursor-pointer font-medium"
+                >
+                  Import from GitHub
+                </button>
+                <button
                   onClick={() => window.dispatchEvent(new CustomEvent('zyva:openFolderModal'))}
                   className="w-full text-[12px] px-3 py-2 bg-[#2a2d2e] hover:bg-[#323537] border border-zinc-700/60 text-zinc-300 rounded-lg transition-colors cursor-pointer font-medium"
                 >

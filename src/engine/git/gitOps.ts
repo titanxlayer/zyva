@@ -99,3 +99,26 @@ export async function pushToGitHub(
 
   return push;
 }
+
+
+/**
+ * Clone a GitHub repo into an absolute destination directory (shallow).
+ * For private repos, the OAuth token is embedded for the clone only and then
+ * scrubbed from the saved remote URL.
+ */
+export async function cloneRepo(
+  parentDir: string,
+  destDir: string,
+  repoUrl: string,
+  token?: string,
+  branch?: string,
+): Promise<GitResult> {
+  const url = repoUrl.trim().replace(/\.git$/, '') + '.git';
+  const authUrl = token ? url.replace('https://', `https://x-access-token:${token}@`) : url;
+  const branchArg = branch ? `--branch "${branch.replace(/[^a-zA-Z0-9._\-\/]/g, '')}"` : '';
+  const res = await git(parentDir, `clone --depth 1 ${branchArg} "${authUrl}" "${destDir}"`, 180_000);
+  if (res.ok && token) {
+    await git(destDir, `remote set-url origin "${url}"`).catch(() => {});
+  }
+  return res;
+}

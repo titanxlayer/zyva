@@ -45,6 +45,11 @@ export default function Home() {
   const [folderPathInput, setFolderPathInput] = useState('');
   const [parentPathInput, setParentPathInput] = useState('');
 
+  // Import-from-GitHub modal (open state lives in the store so mobile panels can trigger it)
+  const [importRepoUrl, setImportRepoUrl] = useState('');
+  const [importRepoBusy, setImportRepoBusy] = useState(false);
+  const [importRepoError, setImportRepoError] = useState('');
+
   const [activeHeaderMenu, setActiveHeaderMenu] = useState<string | null>(null);
   const [browseDirectories, setBrowseDirectories] = useState<{name: string, path: string}[]>([]);
   const [browseCurrentPath, setBrowseCurrentPath] = useState('');
@@ -305,6 +310,17 @@ export default function Home() {
                     className="w-full text-left px-4 py-2 hover:bg-[#007acc] hover:text-white transition-colors cursor-pointer"
                   >
                     Create Project...
+                  </button>
+                  <button 
+                    data-testid="dropdown-import-repo"
+                    onClick={() => {
+                      store.setImportRepoModalOpen(true);
+                      setActiveHeaderMenu(null);
+                      store.setProjectDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-[#007acc] hover:text-white transition-colors cursor-pointer"
+                  >
+                    Import from GitHub...
                   </button>
                   <button 
                     data-testid="dropdown-open-folder"
@@ -680,6 +696,49 @@ export default function Home() {
           <AgentSwarm width={isMobile ? Math.min(vpWidth, 900) : rightPanelWidth} />
         </div>
       </div>
+
+      {/* --- IMPORT FROM GITHUB MODAL --- */}
+      {store.isImportRepoModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center font-sans">
+          <div data-testid="import-repo-modal" className="w-[460px] bg-[#1c1c1c] border border-[#2b2d31] rounded-xl shadow-2xl p-6 text-zinc-300 relative">
+            <button onClick={() => store.setImportRepoModalOpen(false)} className="absolute top-4 right-4 p-1 rounded hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-2 mb-1">
+              <GitBranch className="w-4 h-4 text-[#4ec9b0]" />
+              <h2 className="text-[15px] font-semibold text-white">Import from GitHub</h2>
+            </div>
+            <p className="text-[12px] text-zinc-500 mb-4">Clone a repo into your cloud workspace. Works on any device. Private repos use your connected GitHub account.</p>
+            <label className="text-[12px] text-zinc-400 block mb-1.5">Repository URL or owner/repo</label>
+            <input
+              data-testid="import-repo-input"
+              type="text"
+              value={importRepoUrl}
+              onChange={(e) => { setImportRepoUrl(e.target.value); setImportRepoError(''); }}
+              placeholder="https://github.com/vercel/next.js  ·  or  vercel/next.js"
+              className="w-full bg-[#2a2d2e] border border-[#2a2d2e] rounded text-white text-[13px] px-3 py-2 outline-none focus:border-[#007acc] placeholder:text-zinc-600"
+            />
+            {importRepoError && <p className="text-[11px] text-red-400 mt-2">{importRepoError}</p>}
+            <div className="flex justify-end space-x-3 mt-6">
+              <button onClick={() => store.setImportRepoModalOpen(false)} className="px-4 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[13px] font-medium transition-colors cursor-pointer">Cancel</button>
+              <button
+                data-testid="import-repo-submit"
+                disabled={importRepoBusy || !importRepoUrl.trim()}
+                onClick={async () => {
+                  setImportRepoBusy(true); setImportRepoError('');
+                  const r = await store.cloneFromGitHub(importRepoUrl);
+                  setImportRepoBusy(false);
+                  if (r.ok) { store.setImportRepoModalOpen(false); setImportRepoUrl(''); }
+                  else setImportRepoError(r.error || 'Clone failed');
+                }}
+                className="px-4 py-1.5 rounded bg-[#007acc] hover:bg-[#005f9e] text-white text-[13px] font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {importRepoBusy ? 'Cloning…' : 'Clone'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MOBILE BOTTOM TAB BAR — switch panels on small screens */}
       <nav className="md:hidden flex items-stretch h-[54px] bg-[#181818] border-t border-[#2b2d31] shrink-0 z-20 select-none">
