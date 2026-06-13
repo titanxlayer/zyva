@@ -277,7 +277,7 @@ export default function AgentSwarm({ width = 360 }: { width?: number }) {
                           className="bg-[#2a2d2e] border border-zinc-700/60 text-zinc-300 rounded text-[10px] px-1.5 py-0.5 outline-none cursor-pointer max-w-[200px]"
                         >
                           <optgroup label="ZYVA">
-                            <option value="zyva" disabled>🔒 ZYVA (Coming Soon)</option>
+                            <option value="zyva">⚡ ZYVA (Beta)</option>
                           </optgroup>
                           <optgroup label="0G Private Computer (pc.0g.ai)">
                             <option value="minimax-m3">MiniMax-M3 · 1M ctx</option>

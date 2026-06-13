@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getConfig } from '@/engine/config';
 import { CerebrasProvider } from '@/engine/providers/cerebras';
+import { OGPrivateComputerProvider, isSupportedModel as isOgPcModel } from '@/engine/providers/ogpc';
+import { ZyvaProvider, ZYVA_MODEL_ID } from '@/engine/providers/zyva';
 import { runAgent } from '@/engine/orchestrator/runAgent';
 import { runGraph } from '@/engine/orchestrator/graph';
 import { retrieve } from '@/engine/retrieval';
 import { getTeeRuntimeState } from '@/engine/tee/attestation';
 import { Trace } from '@/engine/observability/trace';
-import { generateMockResponse } from '../lib/mock';
+
+// ZYVA (DO Inference Router) — internal model ids. Locked in user-facing UI.
+const ZYVA_MODEL_IDS = new Set(['zyva', 'zyva-v1', ZYVA_MODEL_ID]);
 
 // ── Model routing ───────────────────────────────────────────────────────────
 // GLM models → Cerebras (free for testing). Others → 0G Router (BYO key).
@@ -56,19 +60,19 @@ You work like Cursor or GitHub Copilot Workspace. Relevant code is retrieved sem
 
 === OUTPUT RULES (MANDATORY) ===
 1. Code must be COMPLETE and runnable — no truncation, no placeholders.
-2. Do NOT use plain markdown code blocks for code you want applied. Wrap code in ZYVA tags:
+2. Do NOT use plain markdown code blocks for code you want applied. Wrap code in ZYVA tags.
 
-Create or rewrite a file (preferred):
+PRIMARY METHOD — full file write/rewrite (ALWAYS prefer this):
 [ZYVA_FILE: src/App.tsx]
 \`\`\`tsx
-// complete code from imports to export default
+// the ENTIRE file, complete from imports to export default
 \`\`\`
 [/ZYVA_FILE]
 
-Edit part of a file (scoped patch, preferred for existing files):
+RARE METHOD — scoped patch (only for a tiny surgical change):
 [ZYVA_EDIT: src/App.tsx]
 <<<<<<< SEARCH
-// exact original lines
+// exact original lines, copied character-for-character from "Active file content" below
 =======
 // replacement lines
 >>>>>>> REPLACE
@@ -77,7 +81,11 @@ Edit part of a file (scoped patch, preferred for existing files):
 New project (only if none is open):
 [ZYVA_PROJECT: project-name, react]
 
-The main workspace entry file is src/App.tsx. Prefer scoped [ZYVA_EDIT] over full rewrites for existing files.
+CRITICAL RULES:
+- The main workspace entry file is src/App.tsx. When the user asks to build, create, redesign, or replace a page/UI, ALWAYS rewrite the whole file with [ZYVA_FILE]. Never patch it.
+- Only use [ZYVA_EDIT] for a small, localized change AND only when the SEARCH block is copied verbatim (including exact whitespace/indentation) from the "Active file content" shown below. If you are not 100% certain it matches byte-for-byte, use a full [ZYVA_FILE] rewrite instead — a failed patch produces NO result for the user.
+- A landing page, hero, dashboard, or any new screen is a full-file rewrite of src/App.tsx, not an edit.
+- SELF-CONTAINED: keep the whole UI inside src/App.tsx. Do NOT import CSS files (e.g. './styles.css'), images, or local component modules unless you ALSO output each of them as its own [ZYVA_FILE] block in the same response. Importing a file that does not exist breaks the preview (blank screen). Prefer inline styles or a single <style> tag inside the component.
 ================================
 
 ## WORKSPACE
@@ -144,7 +152,76 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 1. 0G Router (BYO key) — real decentralized inference ─────────────────
+    // Shared retrieval context builder for direct (non-orchestrated) calls.
+    const buildContext = async (): Promise<string> => {
+      if (!projectPath) return '';
+      const hits = await retrieve(projectPath, message).catch(() => []);
+      return hits.length
+        ? '\n\n## RELEVANT CODE\n' + hits.map((r) => `### ${r.path}\n\`\`\`\n${r.content.slice(0, 1000)}\n\`\`\``).join('\n')
+        : '';
+    };
+
+    // ── 0. ZYVA (DO Inference Router) — INTERNAL ONLY (stress testing) ─────────
+    if (ZYVA_MODEL_IDS.has(targetModel) && cfg.zyva.apiKey) {
+      const trace = new Trace(message);
+      trace.set({ model: 'zyva-v1', source: 'zyva-do-router' });
+      const ctx = await buildContext();
+      const provider = new ZyvaProvider(cfg.zyva.apiKey);
+      const msgs = [{ role: 'system' as const, content: systemPrompt + ctx }, ...normalizedHistory, { role: 'user' as const, content: message }];
+      // The DO router occasionally times out under load — retry once.
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const out = await provider.generate({ model: ZYVA_MODEL_ID, messages: msgs, temperature: 0.3, signal: AbortSignal.timeout(115000) });
+          if (out.text) {
+            await trace.flush();
+            return NextResponse.json({
+              success: true, reply: rescueFormat(out.text, fallbackPath),
+              source: 'ZYVA', teeRuntime, traceId: trace.record.id,
+              rateLimit: provider.lastRateLimit,
+            });
+          }
+        } catch (err) {
+          console.warn(`ZYVA path attempt ${attempt} failed:`, (err as Error).message);
+          if (attempt === 2) {
+            await trace.flush();
+            return NextResponse.json({
+              success: true,
+              reply: `⚠️ ZYVA inference timed out (the model took too long to respond). Please send your message again.`,
+              source: 'ZYVA (timeout)', teeRuntime,
+            });
+          }
+        }
+      }
+      await trace.flush();
+    }
+
+    // ── 1. 0G Private Computer — primary ZYVA inference (TEE-attested) ─────────
+    if (isOgPcModel(targetModel) && cfg.ogpc.apiKey) {
+      const trace = new Trace(message);
+      trace.set({ model: targetModel, source: '0g-private-computer' });
+      try {
+        const ctx = await buildContext();
+        const provider = new OGPrivateComputerProvider(cfg.ogpc.apiKey, cfg.ogpc.baseUrl);
+        const out = await provider.generate({
+          model: targetModel,
+          messages: [{ role: 'system', content: systemPrompt + ctx }, ...normalizedHistory, { role: 'user', content: message }],
+          temperature: 0.3,
+        });
+        await trace.flush();
+        if (out.text) {
+          return NextResponse.json({
+            success: true, reply: rescueFormat(out.text, fallbackPath),
+            source: `0G Private Computer (${targetModel})`, teeRuntime, traceId: trace.record.id,
+            teeAttestation: out.teeAttestation,
+          });
+        }
+      } catch (err) {
+        await trace.flush();
+        console.warn('0G PC path failed:', (err as Error).message);
+      }
+    }
+
+    // ── 2. 0G Router (BYO key) — real decentralized inference ─────────────────
     if (ogApiKey && OG_ROUTER_MODELS.has(targetModel)) {
       const trace = new Trace(message);
       trace.set({ model: targetModel, source: '0g-router' });
@@ -187,7 +264,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ── 2. Cerebras GLM via bounded orchestrator (retrieval + trace + retry) ──
+    // ── 3. Cerebras GLM via bounded orchestrator (retrieval + trace + retry) ──
     const cerebrasModel = CEREBRAS_GLM_MODELS[targetModel];
     if (cerebrasModel && cfg.cerebrasApiKey) {
       try {
@@ -214,11 +291,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 3. Demo fallback (no keys configured) ─────────────────────────────────
+    // ── 4. No 0G PC key → DO NOT fall back to mock. Force a real key. ─────────
     return NextResponse.json({
       success: true,
-      reply: generateMockResponse(message, projectPath),
-      source: 'Demo Mode',
+      reply: `🔒 **0G Private Computer key required**\n\nZYVA runs all inference on the **0G Private Computer** (TEE-attested, decentralized). No demo or mock responses — every result is real.\n\nTo start coding with **${targetModel}**, add your key:\n\n1. Get a key at **[pc.0g.ai](https://pc.0g.ai)**\n2. Open **Settings → 0G Private Computer Key**\n3. Paste your key and retry\n\n> ZYVA never fakes output. Real models only.`,
+      source: '0G Private Computer (no key)',
       teeRuntime,
     });
   } catch (err) {

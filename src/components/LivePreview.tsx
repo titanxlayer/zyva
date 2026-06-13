@@ -18,19 +18,35 @@ import {
 // ── WebContainer singleton ────────────────────────────────────────────────────
 let wcInstance: any = null;
 let wcReady = false;
-let wcReadyCallbacks: (() => void)[] = [];
+let wcBootPromise: Promise<any> | null = null;
+let wcMountedProject = ''; // which project's files are currently mounted
 
 async function getWebContainer() {
   if (wcInstance && wcReady) return wcInstance;
+  if (wcBootPromise) return wcBootPromise;
   // Dynamic import so server bundle stays clean
-  const { WebContainer } = await import('@webcontainer/api');
-  if (!wcInstance) {
+  wcBootPromise = (async () => {
+    const { WebContainer } = await import('@webcontainer/api');
     wcInstance = await WebContainer.boot();
     wcReady = true;
-    wcReadyCallbacks.forEach(fn => fn());
-    wcReadyCallbacks = [];
+    return wcInstance;
+  })();
+  try {
+    return await wcBootPromise;
+  } finally {
+    wcBootPromise = null;
   }
-  return wcInstance;
+}
+
+/** Fully tear down the WebContainer so the next boot starts from a clean slate. */
+function resetWebContainer() {
+  if (wcInstance) {
+    try { wcInstance.teardown(); } catch { /* ignore */ }
+  }
+  wcInstance = null;
+  wcReady = false;
+  wcBootPromise = null;
+  wcMountedProject = '';
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -85,10 +101,40 @@ function buildWCFiles(fileContents: Record<string, string>) {
     };
   }
 
+  // ── Safety net: stub any imported CSS that doesn't exist ──────────────────
+  // The model sometimes writes `import './styles.css'` without creating the file.
+  // An unresolved import makes Vite fail → blank preview. Create empty stubs.
+  const addStub = (relPath: string) => {
+    const parts = relPath.split('/').filter(p => p && p !== '.');
+    let node = files;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!node[parts[i]] || !node[parts[i]].directory) node[parts[i]] = { directory: {} };
+      node = node[parts[i]].directory;
+    }
+    const leaf = parts[parts.length - 1];
+    if (!node[leaf]) node[leaf] = { file: { contents: '' } };
+  };
+  const cssImportRe = /(?:import\s+['"]|from\s+['"])(\.[^'"]+\.css)['"]/g;
+  for (const [filePath, content] of Object.entries(fileContents)) {
+    if (!content || !/\.(tsx?|jsx?)$/.test(filePath)) continue;
+    const dir = filePath.includes('/') ? filePath.slice(0, filePath.lastIndexOf('/')) : '';
+    let m: RegExpExecArray | null;
+    while ((m = cssImportRe.exec(content)) !== null) {
+      // resolve relative import against the importing file's directory
+      const segs = (dir ? dir.split('/') : []).concat(m[1].split('/'));
+      const resolved: string[] = [];
+      for (const s of segs) {
+        if (s === '' || s === '.') continue;
+        if (s === '..') resolved.pop();
+        else resolved.push(s);
+      }
+      const cssPath = resolved.join('/');
+      if (!fileContents[cssPath]) addStub(cssPath);
+    }
+  }
+
   return files;
 }
-
-// ── Component ─────────────────────────────────────────────────────────────────
 export default function LivePreview() {
   const fileContents = useIdeStore(s => s.fileContents);
   const projectPath = useIdeStore(s => s.projectPath);
@@ -108,6 +154,51 @@ export default function LivePreview() {
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const startedRef = useRef(false);
+  // Which project the WebContainer currently holds — reset preview when it changes.
+  const mountedProjectRef = useRef<string>('');
+
+  // ── Reset preview when the active project changes (fresh remount) ──────────
+  useEffect(() => {
+    if (mountedProjectRef.current === projectPath) return;
+    // Project switched (or first load) — tear down stale container + state.
+    if (mountedProjectRef.current !== '') {
+      resetWebContainer();
+      startedRef.current = false;
+      setStatus('idle');
+      setPreviewUrl('');
+      setErrorMsg('');
+    }
+    mountedProjectRef.current = projectPath;
+  }, [projectPath]);
+
+  // E2B preview sandbox tracking — kill on tab close / unmount.
+  const e2bSandboxId = useRef<string>('');
+  const e2bPopup = useRef<Window | null>(null);
+  const e2bPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const killE2bSandbox = useCallback((useBeacon = false) => {
+    const id = e2bSandboxId.current;
+    if (!id) return;
+    e2bSandboxId.current = '';
+    setE2bUrl('');
+    if (e2bPollTimer.current) { clearInterval(e2bPollTimer.current); e2bPollTimer.current = null; }
+    const payload = JSON.stringify({ action: 'kill', sandboxId: id });
+    if (useBeacon && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/sandbox', new Blob([payload], { type: 'application/json' }));
+    } else {
+      fetch('/api/sandbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
+    }
+  }, []);
+
+  // Kill the sandbox if the IDE tab/window is closed, and on unmount.
+  useEffect(() => {
+    const onHide = () => killE2bSandbox(true);
+    window.addEventListener('pagehide', onHide);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      killE2bSandbox(true);
+    };
+  }, [killE2bSandbox]);
 
   // ── WebContainer boot + start ────────────────────────────────────────────
   const startPreview = useCallback(async () => {
@@ -117,12 +208,19 @@ export default function LivePreview() {
     setErrorMsg('');
 
     try {
+      // If a container is mounted for a different project, tear it down first
+      // so we never serve a previous project's files (e.g. the starter template).
+      if (wcMountedProject && wcMountedProject !== projectPath) {
+        resetWebContainer();
+      }
+
       const wc = await getWebContainer();
       setStatus('installing');
 
-      // Mount files
+      // Mount files fresh for this project
       const files = buildWCFiles(fileContents);
       await wc.mount(files);
+      wcMountedProject = projectPath;
 
       // npm install
       const install = await wc.spawn('npm', ['install', '--prefer-offline']);
@@ -149,16 +247,16 @@ export default function LivePreview() {
       dev.output.pipeTo(new WritableStream({
         write(chunk) {
           if (chunk.includes('error') || chunk.includes('Error')) {
-            console.warn('[WebContainer]', chunk);
+            console.warn('[ZYVA Sandbox]', chunk);
           }
         },
       }));
     } catch (e: any) {
       setStatus('error');
-      setErrorMsg(e.message || 'WebContainer failed to start');
+      setErrorMsg(e.message || 'ZYVA Sandbox failed to start');
       startedRef.current = false;
     }
-  }, [fileContents]);
+  }, [fileContents, projectPath]);
 
   // ── Sync file changes to running WebContainer ───────────────────────────
   useEffect(() => {
@@ -199,22 +297,27 @@ export default function LivePreview() {
 
   // ── E2B "Open in Browser" ────────────────────────────────────────────────
   const openInBrowser = useCallback(async () => {
-    if (e2bUrl) { window.open(e2bUrl, '_blank'); return; }
+    if (e2bUrl && e2bSandboxId.current) { e2bPopup.current = window.open(e2bUrl, '_blank'); return; }
     setE2bLoading(true);
     try {
       const res = await fetch('/api/sandbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          command: 'npm run dev',
-          files: fileContents,
-          approved: true,
-        }),
+        body: JSON.stringify({ action: 'preview', files: fileContents }),
       });
       const data = await res.json();
       if (data.url) {
         setE2bUrl(data.url);
-        window.open(data.url, '_blank');
+        if (data.sandboxId) e2bSandboxId.current = data.sandboxId;
+        const popup = window.open(data.url, '_blank');
+        e2bPopup.current = popup;
+        // When the user closes the E2B tab, kill the sandbox immediately.
+        if (popup) {
+          if (e2bPollTimer.current) clearInterval(e2bPollTimer.current);
+          e2bPollTimer.current = setInterval(() => {
+            if (e2bPopup.current && e2bPopup.current.closed) killE2bSandbox();
+          }, 2000);
+        }
       } else {
         // Fallback: open WebContainer URL in new tab (same-origin only)
         if (previewUrl) window.open(previewUrl, '_blank');
@@ -224,11 +327,11 @@ export default function LivePreview() {
     } finally {
       setE2bLoading(false);
     }
-  }, [fileContents, previewUrl, e2bUrl]);
+  }, [fileContents, previewUrl, e2bUrl, killE2bSandbox]);
 
   const statusLabel: Record<typeof status, string> = {
     idle: 'Click Run to start preview',
-    booting: 'Booting WebContainer…',
+    booting: 'Starting ZYVA Sandbox…',
     installing: 'Installing packages…',
     starting: 'Starting dev server…',
     ready: '',
@@ -313,7 +416,7 @@ export default function LivePreview() {
         {status === 'idle' && (
           <div className="flex-1 h-full flex flex-col items-center justify-center text-zinc-600 gap-3">
             <Play className="w-8 h-8 opacity-30" />
-            <p className="text-[13px]">Click <strong className="text-zinc-500">Run</strong> to start WebContainer preview</p>
+            <p className="text-[13px]">Click <strong className="text-zinc-500">Run</strong> to start the ZYVA Sandbox preview</p>
           </div>
         )}
 
@@ -370,7 +473,7 @@ export default function LivePreview() {
       <div className="h-6 shrink-0 bg-[#007acc]/10 border-t border-[#007acc]/20 px-3 flex items-center justify-between text-[9px] text-[#007acc] font-semibold">
         <span className="flex items-center gap-1">
           <span className={`w-1.5 h-1.5 rounded-full ${status === 'ready' ? 'bg-[#34d399] animate-pulse' : 'bg-zinc-600'}`} />
-          {status === 'ready' ? 'WebContainer Dev Server Online' : statusLabel[status] || 'WebContainer'}
+          {status === 'ready' ? 'ZYVA Sandbox Online' : statusLabel[status] || 'ZYVA Sandbox'}
         </span>
         <span className="flex items-center gap-2">
           {frameWidth < 100 && (
@@ -381,7 +484,7 @@ export default function LivePreview() {
               Full width
             </button>
           )}
-          <span>Local Web Sandbox</span>
+          <span>ZYVA Runtime</span>
         </span>
       </div>
     </div>

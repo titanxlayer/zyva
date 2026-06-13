@@ -615,7 +615,7 @@ export default function Home() {
                   title="Toggle Split-Screen Live Preview"
                 >
                   {store.isPreviewOpen ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  <span>{store.isPreviewOpen ? 'Close Preview' : 'Split Preview'}</span>
+                  <span>{store.isPreviewOpen ? 'Close Preview' : 'Preview'}</span>
                 </button>
               )}
             </div>

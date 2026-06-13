@@ -262,17 +262,18 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>,
 )`,
-    'src/App.tsx': `import React from 'react';
-import { Sidebar } from './components/sidebar';
-import Dashboard from './dashboard';
-
-export default function App() {
+    'src/App.tsx': `export default function App() {
   return (
-    <div style={{ display: 'flex', minHeight: 'screen', backgroundColor: '#0d0e12', color: '#ffffff' }}>
-      <Sidebar />
-      <main style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
-        <Dashboard />
-      </main>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0d0e12 0%, #16121f 100%)', color: '#fff', fontFamily: 'system-ui, -apple-system, sans-serif', textAlign: 'center', padding: '24px' }}>
+      <div style={{ fontSize: '56px', marginBottom: '8px' }}>⚡</div>
+      <h1 style={{ fontSize: '34px', fontWeight: 800, margin: '0 0 12px', letterSpacing: '-0.02em' }}>Your ZYVA app is ready</h1>
+      <p style={{ fontSize: '16px', color: '#a1a1aa', maxWidth: '460px', lineHeight: 1.6, margin: 0 }}>
+        This is your starting point. Ask the ZYVA Agent in the chat to build anything —
+        a landing page, dashboard, or full app — and watch it render here live.
+      </p>
+      <code style={{ marginTop: '24px', fontSize: '13px', color: '#7c3aed', background: 'rgba(124,58,237,0.12)', padding: '8px 14px', borderRadius: '8px' }}>
+        edit src/App.tsx or ask the agent
+      </code>
     </div>
   );
 }`,

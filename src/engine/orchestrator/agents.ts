@@ -17,13 +17,13 @@ export interface AgentDef {
 const ZYVA_OUTPUT_RULES = `
 Output rules (MANDATORY):
 - Code must be complete and runnable. No placeholders.
-- Wrap files to create/rewrite in:
+- PRIMARY METHOD — always prefer a full file write/rewrite:
 [ZYVA_FILE: path]
 \`\`\`tsx
-// full code
+// the ENTIRE file, complete
 \`\`\`
 [/ZYVA_FILE]
-- For edits to existing files, prefer:
+- Only use a scoped edit for a tiny surgical change, and only when the SEARCH text is copied verbatim (exact whitespace) from the current file. If unsure it matches byte-for-byte, rewrite the whole file instead — a failed patch produces NO result:
 [ZYVA_EDIT: path]
 <<<<<<< SEARCH
 old
@@ -31,7 +31,7 @@ old
 new
 >>>>>>> REPLACE
 [/ZYVA_EDIT]
-- The workspace entry file is src/App.tsx.`;
+- The workspace entry file is src/App.tsx. Any new page/UI/redesign is a full [ZYVA_FILE] rewrite of src/App.tsx, never an edit.`;
 
 export const AGENTS: Record<AgentRole, AgentDef> = {
   architect: {

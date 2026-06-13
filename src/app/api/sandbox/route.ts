@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getConfig } from '@/engine/config';
-import { runBuildTask, requiresE2B } from '@/engine/execution/e2bExecutor';
+import { runBuildTask, requiresE2B, startPreviewSandbox, killPreviewSandbox } from '@/engine/execution/e2bExecutor';
 import { classifyCommand } from '@/engine/security/commandPolicy';
 import { addTrace } from '@/engine/observability/trace';
 
@@ -8,8 +8,9 @@ import { addTrace } from '@/engine/observability/trace';
  * E2B sandbox endpoint — runs install/build tasks that need native execution.
  * WebContainer handles dev server + preview; this endpoint handles the rest.
  *
- * POST { command, files?, approved? }
- * → { success, stdout, stderr, exitCode, error? }
+ * POST { command, files?, approved? }              → run a build task
+ * POST { action: 'preview', files }                → spawn dev server, return public URL
+ * → { success, stdout, stderr, exitCode, error? } | { success, url }
  */
 export async function POST(req: NextRequest) {
   const cfg = getConfig();
@@ -21,6 +22,26 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+
+    // ── Kill a running preview sandbox (tab closed / preview stopped) ────────
+    if (body.action === 'kill') {
+      const sandboxId = String(body.sandboxId || '');
+      if (!sandboxId) return NextResponse.json({ success: false, error: 'No sandboxId' }, { status: 400 });
+      const killed = await killPreviewSandbox(sandboxId, cfg.e2b.apiKey);
+      return NextResponse.json({ success: killed });
+    }
+
+    // ── Live preview: spawn a real E2B dev server and return its public URL ──
+    if (body.action === 'preview') {
+      const files = (body.files ?? {}) as Record<string, string>;
+      if (!Object.keys(files).length) {
+        return NextResponse.json({ success: false, error: 'No files provided for preview' }, { status: 400 });
+      }
+      const out = await startPreviewSandbox({ files, apiKey: cfg.e2b.apiKey, timeoutMs: 300_000 });
+      addTrace({ type: 'sandbox', command: 'preview:vite', success: out.success, exitCode: out.success ? 0 : 1, durationMs: Date.now() - startedAt });
+      return NextResponse.json(out, { status: out.success ? 200 : 502 });
+    }
+
     const { command, files, approved } = body as {
       command?: string;
       files?: Record<string, string>;

@@ -34,7 +34,7 @@ export default function GettingStartedDocs() {
       </Section>
 
       <Section title="4. Preview your app">
-        <p>Click the <strong>Split Preview</strong> button in the editor toolbar. ZYVA runs your project inside a WebContainer — a full Node.js environment in your browser — and shows the result in a live preview panel. Hot reload works automatically when you save files.</p>
+        <p>Click the <strong>Preview</strong> button in the editor toolbar. ZYVA runs your project inside the <strong>ZYVA Sandbox</strong> — a full Node.js environment right in your browser — and shows the result in a live preview panel. Hot reload works automatically when you save files.</p>
       </Section>
 
       <Section title="5. Deploy">
