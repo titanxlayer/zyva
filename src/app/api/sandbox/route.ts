@@ -37,8 +37,9 @@ export async function POST(req: NextRequest) {
       if (!Object.keys(files).length) {
         return NextResponse.json({ success: false, error: 'No files provided for preview' }, { status: 400 });
       }
-      const out = await startPreviewSandbox({ files, apiKey: cfg.e2b.apiKey, timeoutMs: 300_000 });
-      addTrace({ type: 'sandbox', command: 'preview:vite', success: out.success, exitCode: out.success ? 0 : 1, durationMs: Date.now() - startedAt });
+      const fullStack = !!body.fullStack;
+      const out = await startPreviewSandbox({ files, apiKey: cfg.e2b.apiKey, timeoutMs: 600_000, fullStack });
+      addTrace({ type: 'sandbox', command: fullStack ? 'preview:vite+backend' : 'preview:vite', success: out.success, exitCode: out.success ? 0 : 1, durationMs: Date.now() - startedAt });
       return NextResponse.json(out, { status: out.success ? 200 : 502 });
     }
 

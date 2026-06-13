@@ -120,6 +120,7 @@ export interface IdeState {
   isAgentThinking: boolean;
   sendChatMessage: (text: string) => void;
   sendChatMessageStreaming: (text: string) => Promise<void>;
+  sendAgentLoop: (text: string, opts?: { build?: boolean }) => Promise<void>;
   applyAgentAction: (messageId: string, actionId: string) => Promise<void>;
   rejectAgentAction: (messageId: string, actionId: string) => void;
 
@@ -1420,6 +1421,94 @@ export const useIdeStore = create<IdeState>((set, get) => ({
       }));
     } finally {
       set((state) => ({ swarmAgents: state.swarmAgents.map(a => ({ ...a, status: 'idle' as const })) }));
+    }
+  },
+
+  // ── Iterative agent loop (tool-use + self-healing) ─────────────────────────
+  sendAgentLoop: async (text, opts = {}) => {
+    if (!text.trim()) return;
+    const time = new Date().toLocaleTimeString();
+    const userMsg: ChatMessage = { id: Math.random().toString(), sender: 'user', text, timestamp: time };
+    set((s) => ({ chatMessages: [...s.chatMessages, userMsg], isAgentThinking: true }));
+    const placeholderId = Math.random().toString();
+    set((s) => ({ chatMessages: [...s.chatMessages, {
+      id: placeholderId, sender: 'agent', agentName: 'ZYVA Agent Loop',
+      text: '🔄 Starting iterative agent…', timestamp: time, color: '#4ec9b0', isThinking: true,
+    }] }));
+
+    const addFeed = (agent: string, message: string, color: string) =>
+      set((s) => ({ activityFeed: [{ id: Math.random().toString(), agent, message, timestamp: new Date().toLocaleTimeString(), color }, ...s.activityFeed] }));
+    const appendLog = (line: string) => set((s) => ({ terminalLogs: [...s.terminalLogs, line] }));
+
+    try {
+      const res = await fetch('/api/agent/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task: text,
+          model: get().aiModel,
+          projectPath: get().projectPath,
+          fileContents: get().fileContents,
+          terminalLogs: get().terminalLogs.slice(-50),
+          build: opts.build ?? false,
+        }),
+      });
+      if (!res.body) throw new Error('No stream body');
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      let liveText = '';
+      let filesChanged: string[] = [];
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n\n'); buf = parts.pop() || '';
+        for (const part of parts) {
+          const dl = part.split('\n').find(l => l.startsWith('data: '));
+          if (!dl) continue;
+          let ev: Record<string, unknown>; try { ev = JSON.parse(dl.slice(6)); } catch { continue; }
+          const t = ev.type as string;
+          if (t === 'thinking') {
+            liveText += (ev.text as string) || '';
+            set((s) => ({ chatMessages: s.chatMessages.map(m => m.id === placeholderId ? { ...m, text: liveText.slice(-1200) } : m) }));
+          } else if (t === 'tool_call') {
+            const call = ev.call as { name: string; args: Record<string, unknown> };
+            addFeed('ZYVA Agent', `🔧 ${call.name}(${Object.keys(call.args).join(', ')})`, '#007acc');
+          } else if (t === 'tool_result') {
+            const result = ev.result as { name: string; output: string; error?: string };
+            const preview = (result.output || result.error || '').slice(0, 60).replace(/\n/g, ' ');
+            appendLog(`[${result.name}] ${result.error ? '❌ ' + result.error.slice(0, 80) : '→ ' + preview}`);
+          } else if (t === 'done') {
+            filesChanged = (ev.filesChanged as string[]) || [];
+            addFeed('ZYVA Agent', `✅ Done in ${ev.steps} steps: ${(ev.summary as string).slice(0, 80)}`, '#4ec9b0');
+          } else if (t === 'build_start') { addFeed('Build', `🔨 Build attempt ${ev.round}`, '#ffa94d'); }
+            else if (t === 'build_pass') { addFeed('Build', `✅ Build passed (round ${ev.round})`, '#4ec9b0'); }
+            else if (t === 'build_fail') { appendLog(`❌ Build error: ${(ev.errors as string).slice(0, 200)}`); }
+            else if (t === 'heal_start') { addFeed('Debug', `🩹 Healing build errors (round ${ev.round})…`, '#dcdcaa'); }
+            else if (t === 'error') { throw new Error(ev.error as string); }
+        }
+      }
+
+      // After loop, reload workspace to pick up any files the agent wrote
+      if (get().projectPath) {
+        await get().loadWorkspace(get().projectPath).catch(() => {});
+        for (const f of filesChanged) {
+          if (!get().openedTabs.includes(f)) continue;
+          get().openTab(f);
+        }
+      }
+      const finalText = liveText.replace(/\{"done":true[\s\S]*$/, '').trim() || '✅ Agent loop complete.';
+      set((s) => ({ chatMessages: s.chatMessages.map(m => m.id === placeholderId ? { ...m, text: finalText, isThinking: false } : m), isAgentThinking: false }));
+    } catch (err: unknown) {
+      const msg = (err as Error).message || 'Loop failed';
+      set((s) => ({
+        chatMessages: s.chatMessages.map(m => m.id === placeholderId ? { ...m, text: `⚠️ **Agent loop error:** ${msg}`, isThinking: false } : m),
+        isAgentThinking: false,
+      }));
+    } finally {
+      set((s) => ({ swarmAgents: s.swarmAgents.map(a => ({ ...a, status: 'idle' as const })) }));
     }
   },
 

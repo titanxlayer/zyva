@@ -113,17 +113,30 @@ export interface PreviewSandboxOptions {
   apiKey: string;
   /** How long the sandbox stays alive before E2B reclaims it (ms). */
   timeoutMs?: number;
+  /** If true, also start a backend process on BACKEND_PORT and return its URL. */
+  fullStack?: boolean;
 }
 
 export interface PreviewSandboxResult {
   success: boolean;
-  url?: string;
+  url?: string;           // frontend URL (Vite)
+  backendUrl?: string;    // backend URL (Express/Hono on BACKEND_PORT)
   sandboxId?: string;
   error?: string;
 }
 
-const PREVIEW_DIR = '/home/user/app';
+const PREVIEW_DIR  = '/home/user/app';
 const PREVIEW_PORT = 5173;
+const BACKEND_PORT = 3001;
+
+/** Detect if the project has a backend entry file that should be started separately. */
+function detectBackendEntry(files: Record<string, string>): string | null {
+  const backendEntries = ['server.ts', 'server.js', 'api/index.ts', 'api/index.js', 'backend/index.ts', 'backend/server.ts'];
+  for (const e of backendEntries) {
+    if (files[e] || files[`src/${e}`]) return files[e] ? e : `src/${e}`;
+  }
+  return null;
+}
 
 /** Scaffold a Vite project so a bare src/App.tsx still boots. */
 function scaffoldPreviewFiles(files: Record<string, string>): Record<string, string> {
@@ -184,7 +197,27 @@ export async function startPreviewSandbox(opts: PreviewSandboxOptions): Promise<
     await new Promise((r) => setTimeout(r, 3500));
 
     const host = sandbox.getHost(PREVIEW_PORT);
-    return { success: true, url: `https://${host}`, sandboxId: sandbox.sandboxId };
+    let backendUrl: string | undefined;
+
+    // ── Full-stack: start backend if detected ─────────────────────────────────
+    if (opts.fullStack) {
+      const backendEntry = detectBackendEntry(opts.files);
+      if (backendEntry) {
+        const backendCmd = backendEntry.endsWith('.ts')
+          ? `npx tsx ${backendEntry} &`
+          : `node ${backendEntry} &`;
+        await sandbox.commands.run(
+          `PORT=${BACKEND_PORT} ${backendCmd}`,
+          { cwd: PREVIEW_DIR, background: true },
+        ).catch(() => { /* non-fatal */ });
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          backendUrl = `https://${sandbox.getHost(BACKEND_PORT)}`;
+        } catch { /* backend may not have bound */ }
+      }
+    }
+
+    return { success: true, url: `https://${host}`, backendUrl, sandboxId: sandbox.sandboxId };
   } catch (err) {
     if (sandbox) { try { await sandbox.kill(); } catch { /* ignore */ } }
     return { success: false, error: err instanceof Error ? err.message : String(err) };

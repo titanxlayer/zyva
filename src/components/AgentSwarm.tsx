@@ -76,10 +76,12 @@ export default function AgentSwarm({ width = 360 }: { width?: number }) {
   const rejectAgentAction    = useIdeStore(s => s.rejectAgentAction);
   const multiAgentMode       = useIdeStore(s => s.multiAgentMode);
   const projectPath          = useIdeStore(s => s.projectPath);
+  const sendAgentLoop     = useIdeStore(s => s.sendAgentLoop);
+
   const setCreateProjectModalOpen = useIdeStore(s => s.setCreateProjectModalOpen);
 
-  const [activeTab, setActiveTab] = useState<'swarm' | 'chat'>('chat');
-  const [chatInput, setChatInput]   = useState('');
+  const [activeTab, setActiveTab]   = useState<'swarm' | 'chat'>('chat');
+  const [agentLoopMode, setAgentLoopMode] = useState(false);  const [chatInput, setChatInput]   = useState('');
   const [keyInputVal, setKeyInputVal] = useState(ogApiKey || '');
   const [showKey, setShowKey]         = useState(false);
   const [keySaved, setKeySaved]       = useState(false);
@@ -105,7 +107,11 @@ export default function AgentSwarm({ width = 360 }: { width?: number }) {
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (chatInput.trim() && !isAgentThinking) {
-      sendChatMessage(chatInput.trim());
+      if (agentLoopMode) {
+        sendAgentLoop(chatInput.trim());
+      } else {
+        sendChatMessage(chatInput.trim());
+      }
       setChatInput('');
     }
   };
@@ -349,11 +355,11 @@ export default function AgentSwarm({ width = 360 }: { width?: number }) {
                   </div>
                 </div>
                 <div className="shrink-0 px-3 pb-3 pt-1">
-                  <div className="flex items-center justify-between mb-1.5 px-0.5">
+                  <div className="flex items-center justify-between mb-1.5 px-0.5 gap-1">
                     <button
                       type="button"
                       data-testid="multi-agent-toggle"
-                      onClick={() => updateSettings('multiAgentMode', !multiAgentMode)}
+                      onClick={() => { updateSettings('multiAgentMode', !multiAgentMode); if (!multiAgentMode) setAgentLoopMode(false); }}
                       className={`flex items-center space-x-1.5 text-[9px] font-semibold px-2 py-1 rounded-full border transition-colors cursor-pointer ${
                         multiAgentMode
                           ? 'bg-[#4ec9b0]/15 border-[#4ec9b0]/40 text-[#4ec9b0]'
@@ -362,10 +368,27 @@ export default function AgentSwarm({ width = 360 }: { width?: number }) {
                       title="Multi-agent graph: Architect → Frontend/Backend → Review"
                     >
                       <BrainCircuit className="w-3 h-3" />
-                      <span>{multiAgentMode ? 'Multi-Agent: ON' : 'Multi-Agent: OFF'}</span>
+                      <span>{multiAgentMode ? 'Swarm' : 'Swarm'}</span>
                     </button>
-                    {multiAgentMode && (
-                      <span className="text-[9px] text-zinc-600">Architect → Frontend/Backend → Review</span>
+                    <button
+                      type="button"
+                      data-testid="agent-loop-toggle"
+                      onClick={() => { setAgentLoopMode(v => !v); if (!agentLoopMode) updateSettings('multiAgentMode', false); }}
+                      className={`flex items-center space-x-1.5 text-[9px] font-semibold px-2 py-1 rounded-full border transition-colors cursor-pointer ${
+                        agentLoopMode
+                          ? 'bg-[#7c3aed]/20 border-[#7c3aed]/50 text-[#a78bfa]'
+                          : 'bg-zinc-800/60 border-zinc-700/60 text-zinc-500 hover:text-zinc-300'
+                      }`}
+                      title="Iterative agent loop: uses tools (read/write/run) to complete tasks step-by-step"
+                    >
+                      <Zap className="w-3 h-3" />
+                      <span>{agentLoopMode ? 'Loop: ON' : 'Loop'}</span>
+                    </button>
+                    {agentLoopMode && (
+                      <span className="text-[9px] text-[#a78bfa] truncate">ReAct: tools + iterate</span>
+                    )}
+                    {multiAgentMode && !agentLoopMode && (
+                      <span className="text-[9px] text-zinc-600 truncate">Architect → Frontend/Backend</span>
                     )}
                   </div>
                   <form onSubmit={handleChatSubmit} className="flex items-end space-x-2">
