@@ -7,6 +7,7 @@ export interface ZyvaConfig {
   cerebrasApiKey: string;
   ogpc: { apiKey: string; baseUrl: string; model: string };
   e2b: { apiKey: string };
+  zyva: { apiKey: string };  // DO Inference Router — internal only
   dashscope: { apiKey: string; base: string };
   embed: { model: string; dims: number; backend: 'dashscope' | 'local' | 'gateway' };
   ollama: { base: string; model: string };
@@ -30,6 +31,9 @@ export function getConfig(): ZyvaConfig {
     },
     e2b: {
       apiKey: env.E2B_API_KEY || '',
+    },
+    zyva: {
+      apiKey: env.ZYVA_DO_API_KEY || '',
     },
     dashscope: {
       apiKey: env.DASHSCOPE_API_KEY || '',

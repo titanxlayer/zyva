@@ -11,11 +11,13 @@
   "dependencies": {
     "@0gfoundation/0g-compute-ts-sdk": "^0.8.4",
     "@auth/prisma-adapter": "^2.11.2",
+    "@digitalocean/gradient": "^0.1.0-alpha.2",
     "@e2b/code-interpreter": "2.6.0",
     "@monaco-editor/react": "^4.7.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@tanstack/react-query": "^5.101.0",
+    "@webcontainer/api": "^1.6.4",
     "emmet-monaco-es": "^5.3.1",
     "ethers": "^6.16.0",
     "framer-motion": "^12.40.0",

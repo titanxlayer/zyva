@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "temp_opencode", "tests"]
+  "exclude": ["node_modules", "temp_opencode", "tests", "workspaces", "desktop"]
 }

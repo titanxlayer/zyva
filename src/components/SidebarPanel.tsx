@@ -425,6 +425,9 @@ export default function SidebarPanel() {
                     onChange={(e) => store.updateSettings('aiModel', e.target.value)}
                     className="w-full bg-[#3c3c3c] border border-[#3c3c3c] rounded text-[#cccccc] text-[13px] p-1.5 outline-none focus:border-[#007acc] cursor-pointer"
                   >
+                    <optgroup label="ZYVA">
+                      <option value="zyva">ZYVA</option>
+                    </optgroup>
                     <optgroup label="0G Private Computer (pc.0g.ai)">
                       <option value="minimax-m3">MiniMax-M3 · 1M ctx</option>
                       <option value="glm-5.1">GLM-5.1 · 207K ctx</option>

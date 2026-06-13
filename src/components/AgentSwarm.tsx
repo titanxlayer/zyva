@@ -264,7 +264,7 @@ export default function AgentSwarm({ width = 360 }: { width?: number }) {
                   <div ref={chatEndRef} />
                 </div>
 
-                {/* Model Controls + Chat Input */}
+                {/* Chat tab bottom bar — model select + conditional API key */}
                 <div className="shrink-0 px-3 pt-2 pb-1">
                   <div className="bg-[#1e1e1e] border border-[#2b2d31] rounded-xl p-2.5 space-y-2">
                     <div className="flex items-center justify-between">
@@ -276,6 +276,9 @@ export default function AgentSwarm({ width = 360 }: { width?: number }) {
                           onChange={e => updateSettings('aiModel', e.target.value)}
                           className="bg-[#2a2d2e] border border-zinc-700/60 text-zinc-300 rounded text-[10px] px-1.5 py-0.5 outline-none cursor-pointer max-w-[200px]"
                         >
+                          <optgroup label="ZYVA">
+                            <option value="zyva">ZYVA</option>
+                          </optgroup>
                           <optgroup label="0G Private Computer (pc.0g.ai)">
                             <option value="minimax-m3">MiniMax-M3 · 1M ctx</option>
                             <option value="glm-5.1">GLM-5.1 · 207K ctx</option>
@@ -312,33 +315,36 @@ export default function AgentSwarm({ width = 360 }: { width?: number }) {
                         )}
                       </div>
 
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-1.5">
-                          <Key className="w-2.5 h-2.5 text-zinc-600" />
-                          <span className="text-[9px] text-zinc-600">0G Router Key (optional):</span>
-                          {ogApiKey && <span className="text-[9px] text-emerald-500">✓ saved</span>}
-                        </div>
-                        <div className="flex items-center space-x-1.5">
-                          <div className="relative flex-1">
-                            <input
-                              type={showKey ? 'text' : 'password'}
-                              value={keyInputVal}
-                              onChange={e => setKeyInputVal(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && handleSaveKey()}
-                              placeholder="0G API Key (optional)..."
-                              className="w-full bg-[#141414] border border-zinc-700/40 rounded-lg text-zinc-400 text-[10px] px-2.5 py-1.5 outline-none focus:border-[#007acc]/50 font-mono pr-7 placeholder:text-zinc-600"
-                            />
-                            <button type="button" onClick={() => setShowKey(!showKey)}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-700 hover:text-zinc-500 cursor-pointer">
-                              {showKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                      {/* API Key — only show when a 0G PC model is selected, hidden for ZYVA */}
+                      {aiModel !== 'zyva' && (
+                        <div className="space-y-1">
+                          <div className="flex items-center space-x-1.5">
+                            <Key className="w-2.5 h-2.5 text-zinc-600" />
+                            <span className="text-[9px] text-zinc-600">0G PC API Key (optional):</span>
+                            {ogApiKey && <span className="text-[9px] text-emerald-500">✓ saved</span>}
+                          </div>
+                          <div className="flex items-center space-x-1.5">
+                            <div className="relative flex-1">
+                              <input
+                                type={showKey ? 'text' : 'password'}
+                                value={keyInputVal}
+                                onChange={e => setKeyInputVal(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleSaveKey()}
+                                placeholder="0G API Key (optional)..."
+                                className="w-full bg-[#141414] border border-zinc-700/40 rounded-lg text-zinc-400 text-[10px] px-2.5 py-1.5 outline-none focus:border-[#007acc]/50 font-mono pr-7 placeholder:text-zinc-600"
+                              />
+                              <button type="button" onClick={() => setShowKey(!showKey)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-700 hover:text-zinc-500 cursor-pointer">
+                                {showKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                              </button>
+                            </div>
+                            <button type="button" onClick={handleSaveKey}
+                              className={`px-2.5 py-1.5 rounded-lg text-[9px] font-semibold transition-all cursor-pointer shrink-0 ${keySaved ? 'bg-emerald-600 text-white' : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'}`}>
+                              {keySaved ? 'Saved' : 'Save'}
                             </button>
                           </div>
-                          <button type="button" onClick={handleSaveKey}
-                            className={`px-2.5 py-1.5 rounded-lg text-[9px] font-semibold transition-all cursor-pointer shrink-0 ${keySaved ? 'bg-emerald-600 text-white' : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'}`}>
-                            {keySaved ? 'Saved' : 'Save'}
-                          </button>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>

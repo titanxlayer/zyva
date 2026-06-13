@@ -2,347 +2,387 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useIdeStore } from '@/store/useIdeStore';
-import { ArrowLeft, ArrowRight, RotateCw, Monitor, Smartphone, Globe, ShieldAlert } from 'lucide-react';
+import {
+  ArrowLeft, ArrowRight, RotateCw, Monitor, Smartphone,
+  Globe, ExternalLink, Loader2, Play, X,
+} from 'lucide-react';
 
 /**
- * LivePreview — renders React TSX code in a sandboxed iframe.
+ * LivePreview — WebContainer-powered live preview with resizable frame.
  *
- * Strategy:
- * 1. Find the entry file (App.tsx or active file)
- * 2. Resolve all local imports from fileContents
- * 3. Transpile TSX → JS using Babel Standalone (loaded in iframe)
- * 4. Render with React + ReactDOM CDN in the iframe
+ * Split preview: WebContainer in-browser (free, no cold start).
+ * "Open in Browser": E2B sandbox with real URL in new tab.
+ * Resizable: drag the frame handle to go full/partial width.
  */
-export default function LivePreview() {
-  const activeFile = useIdeStore((state) => state.activeFile);
-  const fileContents = useIdeStore((state) => state.fileContents);
 
-  const [deviceMode, setDeviceMode] = useState<'desktop' | 'mobile'>('desktop');
-  const [urlAddress, setUrlAddress] = useState<string>('http://localhost:5173/');
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+// ── WebContainer singleton ────────────────────────────────────────────────────
+let wcInstance: any = null;
+let wcReady = false;
+let wcReadyCallbacks: (() => void)[] = [];
 
-  // Build a module map from workspace files
-  const buildModuleMap = useCallback((): Record<string, string> => {
-    const moduleMap: Record<string, string> = {};
-    for (const [filePath, content] of Object.entries(fileContents)) {
-      if (!content) continue;
-      // Normalize path keys: remove leading ./ and extensions
-      const normalized = filePath
-        .replace(/^\.\//, '')
-        .replace(/\.(tsx|ts|jsx|js)$/, '');
-      moduleMap[normalized] = content;
-      // Also store with full extension
-      moduleMap[filePath.replace(/^\.\//, '')] = content;
+async function getWebContainer() {
+  if (wcInstance && wcReady) return wcInstance;
+  // Dynamic import so server bundle stays clean
+  const { WebContainer } = await import('@webcontainer/api');
+  if (!wcInstance) {
+    wcInstance = await WebContainer.boot();
+    wcReady = true;
+    wcReadyCallbacks.forEach(fn => fn());
+    wcReadyCallbacks = [];
+  }
+  return wcInstance;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function buildWCFiles(fileContents: Record<string, string>) {
+  const files: Record<string, any> = {};
+
+  for (const [path, content] of Object.entries(fileContents)) {
+    if (!content) continue;
+    const parts = path.split('/');
+    let node = files;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!node[parts[i]]) node[parts[i]] = { directory: {} };
+      node = node[parts[i]].directory;
     }
-    return moduleMap;
+    node[parts[parts.length - 1]] = { file: { contents: content } };
+  }
+
+  // Ensure package.json has a dev script if missing
+  if (!files['package.json']) {
+    files['package.json'] = {
+      file: {
+        contents: JSON.stringify({
+          name: 'zyva-preview',
+          type: 'module',
+          scripts: { dev: 'vite --port 3000 --host' },
+          dependencies: { react: '^19.0.0', 'react-dom': '^19.0.0' },
+          devDependencies: {
+            '@vitejs/plugin-react': '^4.3.1',
+            typescript: '^5.2.2',
+            vite: '^5.3.1',
+          },
+        }, null, 2),
+      },
+    };
+  }
+
+  // vite.config.ts
+  if (!files['vite.config.ts'] && !files['vite.config.js']) {
+    files['vite.config.ts'] = {
+      file: {
+        contents: `import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()], server: { port: 3000, host: true } });`,
+      },
+    };
+  }
+
+  // index.html entry
+  if (!files['index.html']) {
+    files['index.html'] = {
+      file: {
+        contents: `<!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>ZYVA Preview</title></head><body style="margin:0"><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>`,
+      },
+    };
+  }
+
+  return files;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+export default function LivePreview() {
+  const fileContents = useIdeStore(s => s.fileContents);
+  const projectPath = useIdeStore(s => s.projectPath);
+
+  const [status, setStatus] = useState<'idle' | 'booting' | 'installing' | 'starting' | 'ready' | 'error'>('idle');
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [deviceMode, setDeviceMode] = useState<'desktop' | 'mobile'>('desktop');
+  const [urlBar, setUrlBar] = useState('http://localhost:3000/');
+  const [e2bLoading, setE2bLoading] = useState(false);
+  const [e2bUrl, setE2bUrl] = useState('');
+
+  // Resizable frame width (as %)
+  const [frameWidth, setFrameWidth] = useState(100);
+  const isResizingFrame = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const startedRef = useRef(false);
+
+  // ── WebContainer boot + start ────────────────────────────────────────────
+  const startPreview = useCallback(async () => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    setStatus('booting');
+    setErrorMsg('');
+
+    try {
+      const wc = await getWebContainer();
+      setStatus('installing');
+
+      // Mount files
+      const files = buildWCFiles(fileContents);
+      await wc.mount(files);
+
+      // npm install
+      const install = await wc.spawn('npm', ['install', '--prefer-offline']);
+      const installExit = await install.exit;
+      if (installExit !== 0) {
+        setStatus('error');
+        setErrorMsg('npm install failed. Check package.json.');
+        return;
+      }
+
+      setStatus('starting');
+
+      // npm run dev
+      const dev = await wc.spawn('npm', ['run', 'dev']);
+
+      // Wait for server-ready
+      wc.on('server-ready', (_port: number, url: string) => {
+        setPreviewUrl(url);
+        setUrlBar(url);
+        setStatus('ready');
+      });
+
+      // Stream stderr for errors
+      dev.output.pipeTo(new WritableStream({
+        write(chunk) {
+          if (chunk.includes('error') || chunk.includes('Error')) {
+            console.warn('[WebContainer]', chunk);
+          }
+        },
+      }));
+    } catch (e: any) {
+      setStatus('error');
+      setErrorMsg(e.message || 'WebContainer failed to start');
+      startedRef.current = false;
+    }
   }, [fileContents]);
 
-  // Find the best entry file for preview
-  const findEntryFile = useCallback((): string | null => {
-    const keys = Object.keys(fileContents);
-    
-    // Priority order for entry points
-    const candidates = [
-      keys.find(k => k === 'src/App.tsx' || k === 'src/App.jsx'),
-      keys.find(k => k.endsWith('/App.tsx') || k.endsWith('/App.jsx')),
-      activeFile && (activeFile.endsWith('.tsx') || activeFile.endsWith('.jsx')) ? activeFile : null,
-      keys.find(k => k.endsWith('page.tsx')),
-      keys.find(k => k.endsWith('.tsx') || k.endsWith('.jsx')),
-    ];
-
-    return candidates.find(Boolean) || null;
-  }, [fileContents, activeFile]);
-
-  // Generate the full iframe HTML document
-  const generateIframeDoc = useCallback((): string => {
-    const entryFile = findEntryFile();
-    if (!entryFile) {
-      return `<!DOCTYPE html><html><head><style>body{margin:0;background:#0d0e12;color:#666;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;}</style></head><body><div>No previewable React files found</div></body></html>`;
-    }
-
-    const moduleMap = buildModuleMap();
-
-    // Collect all modules into a JSON-safe string, escaping HTML characters to prevent breaking the inline <script> tag
-    const modulesJson = JSON.stringify(moduleMap).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
-
-    setUrlAddress(`http://localhost:5173/${entryFile.replace('src/', '')}`);
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0d0e12; color: #ffffff; }
-    #root { min-height: 100vh; }
-    /* Tailwind-like utility reset for common classes */
-    .flex { display: flex; }
-    .flex-col { flex-direction: column; }
-    .flex-1 { flex: 1; }
-    .items-center { align-items: center; }
-    .justify-center { justify-content: center; }
-    .justify-between { justify-content: space-between; }
-    .gap-2 { gap: 8px; }
-    .gap-3 { gap: 12px; }
-    .gap-4 { gap: 16px; }
-    .p-4 { padding: 16px; }
-    .p-6 { padding: 24px; }
-    .p-8 { padding: 32px; }
-    .px-4 { padding-left: 16px; padding-right: 16px; }
-    .py-2 { padding-top: 8px; padding-bottom: 8px; }
-    .m-0 { margin: 0; }
-    .mb-4 { margin-bottom: 16px; }
-    .text-center { text-align: center; }
-    .text-white { color: #ffffff; }
-    .text-sm { font-size: 14px; }
-    .text-lg { font-size: 18px; }
-    .text-xl { font-size: 20px; }
-    .text-2xl { font-size: 24px; }
-    .text-3xl { font-size: 30px; }
-    .font-bold { font-weight: 700; }
-    .font-semibold { font-weight: 600; }
-    .rounded { border-radius: 6px; }
-    .rounded-lg { border-radius: 8px; }
-    .rounded-xl { border-radius: 12px; }
-    .min-h-screen { min-height: 100vh; }
-    .w-full { width: 100%; }
-    .max-w-md { max-width: 28rem; }
-    .mx-auto { margin-left: auto; margin-right: auto; }
-    .space-y-4 > * + * { margin-top: 16px; }
-    .space-x-2 > * + * { margin-left: 8px; }
-    .grid { display: grid; }
-    .overflow-hidden { overflow: hidden; }
-    .cursor-pointer { cursor: pointer; }
-    .transition-all { transition: all 0.2s; }
-    .border { border: 1px solid rgba(255,255,255,0.1); }
-    .border-none { border: none; }
-    .shadow-xl { box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3); }
-    /* Error display */
-    .preview-error { color: #f87171; background: #1c1917; border: 1px solid #991b1b; border-radius: 8px; padding: 16px; margin: 16px; font-family: monospace; font-size: 12px; white-space: pre-wrap; }
-    .preview-error h3 { color: #fca5a5; margin: 0 0 8px; font-size: 14px; }
-  </style>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
-</head>
-<body>
-  <div id="root"></div>
-  <script>
-  (function() {
-    try {
-      var MODULES = ${modulesJson};
-      var moduleCache = {};
-
-      // Simple require/import resolver
-      function resolveModule(importPath, fromFile) {
-        // Strip leading ./ or ../
-        var cleanPath = importPath.replace(/^\\.\\//g, '').replace(/\\.\\.\\//g, '');
-        
-        // If importing from a file in src/, resolve relative
-        if (fromFile && fromFile.startsWith('src/') && importPath.startsWith('./')) {
-          var dir = fromFile.substring(0, fromFile.lastIndexOf('/'));
-          cleanPath = dir + '/' + importPath.replace('./', '');
-        } else if (importPath.startsWith('./')) {
-          cleanPath = 'src/' + importPath.replace('./', '');
-        }
-
-        // Try various paths
-        var attempts = [
-          cleanPath,
-          cleanPath.replace(/\\.(tsx|ts|jsx|js)$/, ''),
-          'src/' + cleanPath,
-          'src/' + cleanPath.replace(/\\.(tsx|ts|jsx|js)$/, ''),
-        ];
-
-        for (var i = 0; i < attempts.length; i++) {
-          var p = attempts[i];
-          if (MODULES[p]) return { path: p, code: MODULES[p] };
-          if (MODULES[p + '.tsx']) return { path: p + '.tsx', code: MODULES[p + '.tsx'] };
-          if (MODULES[p + '.ts']) return { path: p + '.ts', code: MODULES[p + '.ts'] };
-          if (MODULES[p + '.jsx']) return { path: p + '.jsx', code: MODULES[p + '.jsx'] };
-          if (MODULES[p + '.js']) return { path: p + '.js', code: MODULES[p + '.js'] };
-          if (MODULES[p + '.css']) return { path: p + '.css', code: MODULES[p + '.css'] };
-          // Try index files
-          if (MODULES[p + '/index.tsx']) return { path: p + '/index.tsx', code: MODULES[p + '/index.tsx'] };
-          if (MODULES[p + '/index.ts']) return { path: p + '/index.ts', code: MODULES[p + '/index.ts'] };
-        }
-        return null;
-      }
-
-      // Transpile and execute a module, return its exports
-      function requireModule(modulePath, fromFile) {
-        // External packages -> return stubs
-        if (!modulePath.startsWith('.') && !modulePath.startsWith('src/')) {
-          if (modulePath === 'react') return window.React;
-          if (modulePath === 'react-dom') return window.ReactDOM;
-          if (modulePath === 'react-dom/client') return window.ReactDOM;
-          if (modulePath === 'framer-motion') return window.Motion || {}; // if motion is loaded
-          if (modulePath === 'lucide-react') return window.Lucide || new Proxy({}, { get: function() { return function() { return null; } } });
-          return {};
-        }
-
-        var resolved = resolveModule(modulePath, fromFile);
-        if (!resolved) {
-          console.warn('[LivePreview] Module not found:', modulePath, 'from', fromFile);
-          return {};
-        }
-
-        if (moduleCache[resolved.path]) return moduleCache[resolved.path].exports;
-
-        var module = { exports: {} };
-        moduleCache[resolved.path] = module;
-
-        // If it's a CSS file, inject it as a style tag
-        if (resolved.path.endsWith('.css')) {
-          var style = document.createElement('style');
-          style.innerHTML = resolved.code;
-          document.head.appendChild(style);
-          return module.exports;
-        }
-
-        try {
-          // Transpile with Babel. Force TS+TSX parsing because resolved module
-          // paths may not carry a .tsx extension, which would otherwise leave
-          // interfaces, type annotations and generics intact and crash at runtime.
-          var transpiled = Babel.transform(resolved.code, {
-            presets: [
-              'env',
-              'react',
-              ['typescript', { isTSX: true, allExtensions: true, allowDeclareFields: true }],
-            ],
-            filename: resolved.path,
-          }).code;
-
-          // Execute in a CommonJS wrapper scope
-          var fn = new Function('module', 'exports', 'require', 'React', 'ReactDOM', transpiled);
-          
-          fn(
-            module,
-            module.exports,
-            function(path) { return requireModule(path, resolved.path); },
-            window.React,
-            window.ReactDOM
-          );
-
-          module.exports.__transpiled = transpiled;
-          return module.exports;
-
-        } catch(e) {
-          console.error('[LivePreview] Error transpiling', resolved.path, ':', e.message);
-          module.exports = { __error: e.message, __path: resolved.path };
-          return module.exports;
-        }
-      }
-
-      // Global require function
-      window.__require = requireModule;
-
-      // Find and render the App component
-      var entryPath = '${entryFile}';
-      var appModule = requireModule(entryPath, '');
-
-      var AppComponent = appModule["default"] || appModule.App || appModule[Object.keys(appModule).find(function(k) { return typeof appModule[k] === 'function'; }) || ''];
-
-      if (AppComponent && typeof AppComponent === 'function') {
-        var root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(React.createElement(AppComponent));
-      } else if (appModule.__error) {
-        document.getElementById('root').innerHTML = '<div class="preview-error"><h3>⚠ Transpilation Error in ' + (appModule.__path || entryPath) + '</h3>' + appModule.__error + '</div>';
-      } else {
-        document.getElementById('root').innerHTML = '<div class="preview-error" style="height:100%;overflow:auto"><h3>⚠ No React component exported</h3>Entry file: ' + entryPath + '<br/>Exported keys: ' + Object.keys(appModule).join(', ') + '<br/><br/><b>Transpiled Code:</b><pre>' + (appModule.__transpiled || 'none').replace(/</g, '&lt;') + '</pre></div>';
-      }
-
-    } catch(e) {
-      document.getElementById('root').innerHTML = '<div class="preview-error"><h3>⚠ Preview Runtime Error</h3>' + e.message + '<br/><br/>' + (e.stack || '').substring(0, 500) + '</div>';
-    }
-  })();
-  </script>
-</body>
-</html>`;
-  }, [findEntryFile, buildModuleMap]);
-
-  // Update iframe whenever code changes
+  // ── Sync file changes to running WebContainer ───────────────────────────
   useEffect(() => {
-    const doc = generateIframeDoc();
-    const iframe = iframeRef.current;
-    if (iframe) {
-      // Use srcdoc for sandboxed rendering
-      iframe.srcdoc = doc;
+    if (status !== 'ready' || !wcInstance) return;
+    // Write changed files on every update
+    (async () => {
+      try {
+        for (const [path, content] of Object.entries(fileContents)) {
+          if (!content) continue;
+          await wcInstance.fs.writeFile(path, content);
+        }
+      } catch { /* non-fatal */ }
+    })();
+  }, [fileContents, status]);
+
+  // ── Frame resize drag ────────────────────────────────────────────────────
+  const startFrameResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingFrame.current = true;
+    const startX = e.clientX;
+    const startW = frameWidth;
+    const containerW = containerRef.current?.offsetWidth || 800;
+
+    const onMove = (ev: MouseEvent) => {
+      if (!isResizingFrame.current) return;
+      const delta = ev.clientX - startX;
+      const newPct = Math.min(100, Math.max(30, startW + (delta / containerW) * 100));
+      setFrameWidth(newPct);
+    };
+    const onUp = () => {
+      isResizingFrame.current = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [frameWidth]);
+
+  // ── E2B "Open in Browser" ────────────────────────────────────────────────
+  const openInBrowser = useCallback(async () => {
+    if (e2bUrl) { window.open(e2bUrl, '_blank'); return; }
+    setE2bLoading(true);
+    try {
+      const res = await fetch('/api/sandbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: 'npm run dev',
+          files: fileContents,
+          approved: true,
+        }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        setE2bUrl(data.url);
+        window.open(data.url, '_blank');
+      } else {
+        // Fallback: open WebContainer URL in new tab (same-origin only)
+        if (previewUrl) window.open(previewUrl, '_blank');
+      }
+    } catch {
+      if (previewUrl) window.open(previewUrl, '_blank');
+    } finally {
+      setE2bLoading(false);
     }
-  }, [generateIframeDoc]);
+  }, [fileContents, previewUrl, e2bUrl]);
+
+  const statusLabel: Record<typeof status, string> = {
+    idle: 'Click Run to start preview',
+    booting: 'Booting WebContainer…',
+    installing: 'Installing packages…',
+    starting: 'Starting dev server…',
+    ready: '',
+    error: errorMsg || 'Error',
+  };
 
   return (
-    <div className="flex-1 h-full flex flex-col bg-[#141517] border-l border-[#2b2d31] overflow-hidden select-none">
-      {/* Browser Navbar mockup */}
-      <div className="h-10 shrink-0 bg-[#1e2022] border-b border-[#2b2d31] flex items-center justify-between px-3 gap-3">
-        {/* Controls */}
-        <div className="flex items-center space-x-1.5 shrink-0">
-          <button className="w-6 h-6 rounded hover:bg-[#2e3032] flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors">
+    <div
+      ref={containerRef}
+      className="flex-1 h-full flex flex-col bg-[#141517] border-l border-[#2b2d31] overflow-hidden select-none"
+    >
+      {/* Browser toolbar */}
+      <div className="h-10 shrink-0 bg-[#1e2022] border-b border-[#2b2d31] flex items-center px-3 gap-2">
+        {/* Back/Forward/Reload */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button className="w-6 h-6 rounded hover:bg-[#2e3032] flex items-center justify-center text-zinc-500 hover:text-white cursor-pointer">
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
-          <button className="w-6 h-6 rounded hover:bg-[#2e3032] flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors">
+          <button className="w-6 h-6 rounded hover:bg-[#2e3032] flex items-center justify-center text-zinc-500 hover:text-white cursor-pointer">
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
-          <button 
-            onClick={() => {
-              const iframe = iframeRef.current;
-              if (iframe) iframe.srcdoc = generateIframeDoc();
-            }}
-            className="w-6 h-6 rounded hover:bg-[#2e3032] flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors"
+          <button
+            onClick={() => { if (iframeRef.current && previewUrl) iframeRef.current.src = previewUrl; }}
+            className="w-6 h-6 rounded hover:bg-[#2e3032] flex items-center justify-center text-zinc-500 hover:text-white cursor-pointer"
           >
             <RotateCw className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Address Bar */}
-        <div className="flex-1 max-w-lg h-6.5 bg-[#0f1011] border border-zinc-800 rounded-md flex items-center px-2.5 text-[11px] text-zinc-400 font-mono gap-1.5 select-all overflow-hidden truncate">
+        {/* URL bar */}
+        <div className="flex-1 h-6 bg-[#0f1011] border border-zinc-800 rounded-md flex items-center px-2.5 text-[11px] text-zinc-400 font-mono gap-1.5 truncate">
           <Globe className="w-3 h-3 text-[#34d399] shrink-0" />
-          <span>{urlAddress}</span>
+          <span className="truncate">{urlBar}</span>
         </div>
 
-        {/* Device Controls & Info */}
-        <div className="flex items-center space-x-1 shrink-0">
-          <button 
+        {/* Run / status */}
+        {status === 'idle' && (
+          <button
+            onClick={startPreview}
+            className="flex items-center gap-1.5 px-3 py-1 bg-[#007acc] hover:bg-[#005f9e] text-white text-[11px] font-bold rounded-lg cursor-pointer shrink-0"
+          >
+            <Play className="w-3 h-3" /> Run
+          </button>
+        )}
+        {(status === 'booting' || status === 'installing' || status === 'starting') && (
+          <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-zinc-400 shrink-0">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span>{statusLabel[status]}</span>
+          </div>
+        )}
+
+        {/* Device mode */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <button
             onClick={() => setDeviceMode('desktop')}
-            className={`w-6.5 h-6.5 rounded flex items-center justify-center cursor-pointer transition-colors ${deviceMode === 'desktop' ? 'bg-[#007acc] text-white' : 'text-zinc-400 hover:bg-[#2e3032] hover:text-white'}`}
-            title="Desktop Mode"
+            className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors ${deviceMode === 'desktop' ? 'bg-[#007acc] text-white' : 'text-zinc-500 hover:bg-[#2e3032] hover:text-white'}`}
           >
             <Monitor className="w-3.5 h-3.5" />
           </button>
-          <button 
+          <button
             onClick={() => setDeviceMode('mobile')}
-            className={`w-6.5 h-6.5 rounded flex items-center justify-center cursor-pointer transition-colors ${deviceMode === 'mobile' ? 'bg-[#007acc] text-white' : 'text-zinc-400 hover:bg-[#2e3032] hover:text-white'}`}
-            title="Mobile Portrait"
+            className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors ${deviceMode === 'mobile' ? 'bg-[#007acc] text-white' : 'text-zinc-500 hover:bg-[#2e3032] hover:text-white'}`}
           >
             <Smartphone className="w-3.5 h-3.5" />
           </button>
         </div>
+
+        {/* Open in browser */}
+        <button
+          onClick={openInBrowser}
+          disabled={e2bLoading}
+          title="Open full preview in new tab (E2B sandbox)"
+          className="flex items-center gap-1 px-2 py-1 text-[11px] text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded-lg cursor-pointer transition-colors shrink-0 disabled:opacity-50"
+        >
+          {e2bLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+          <span>Open</span>
+        </button>
       </div>
 
-      {/* Render Canvas Container */}
-      <div className="flex-1 bg-[#090a0b] overflow-auto flex items-center justify-center p-0">
-        <iframe 
-          ref={iframeRef}
-          data-testid="live-preview-iframe"
-          sandbox="allow-scripts allow-same-origin"
-          className="bg-[#0d0e12] border-0"
-          style={{
-            width: deviceMode === 'desktop' ? '100%' : '375px',
-            height: '100%',
-            maxWidth: deviceMode === 'desktop' ? '100%' : '375px',
-          }}
-          title="ZYVA Live Preview"
-        />
+      {/* Preview area with resizable frame */}
+      <div className="flex-1 bg-[#090a0b] overflow-hidden flex items-start justify-center relative">
+        {status === 'idle' && (
+          <div className="flex-1 h-full flex flex-col items-center justify-center text-zinc-600 gap-3">
+            <Play className="w-8 h-8 opacity-30" />
+            <p className="text-[13px]">Click <strong className="text-zinc-500">Run</strong> to start WebContainer preview</p>
+          </div>
+        )}
+
+        {status === 'error' && (
+          <div className="flex-1 h-full flex flex-col items-center justify-center p-6 text-center gap-3">
+            <X className="w-8 h-8 text-red-500 opacity-50" />
+            <p className="text-[13px] text-red-400">{errorMsg}</p>
+            <button
+              onClick={() => { startedRef.current = false; startPreview(); }}
+              className="px-4 py-2 bg-[#2a2d2e] hover:bg-[#3c3c3c] text-zinc-300 text-[12px] rounded-lg cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {(status === 'booting' || status === 'installing' || status === 'starting') && (
+          <div className="flex-1 h-full flex flex-col items-center justify-center gap-4">
+            <Loader2 className="w-8 h-8 text-[#007acc] animate-spin" />
+            <div className="text-center">
+              <p className="text-[14px] text-zinc-300 font-medium">{statusLabel[status]}</p>
+              {status === 'installing' && (
+                <p className="text-[12px] text-zinc-600 mt-1">This only happens once per session</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {status === 'ready' && previewUrl && (
+          <div className="h-full flex items-start" style={{ width: `${frameWidth}%` }}>
+            {/* Resize handle on left edge */}
+            <div
+              onMouseDown={startFrameResize}
+              className="w-1.5 h-full bg-transparent hover:bg-[#007acc]/40 cursor-ew-resize shrink-0 transition-colors"
+              title="Drag to resize preview"
+            />
+            <iframe
+              ref={iframeRef}
+              src={previewUrl}
+              data-testid="live-preview-iframe"
+              className="flex-1 h-full border-0 bg-white"
+              style={{
+                width: deviceMode === 'mobile' ? '375px' : '100%',
+                maxWidth: deviceMode === 'mobile' ? '375px' : '100%',
+              }}
+              title="ZYVA Live Preview"
+              allow="cross-origin-isolated"
+            />
+          </div>
+        )}
       </div>
 
-      {/* Secure TEE attest overlay banner */}
+      {/* Status bar */}
       <div className="h-6 shrink-0 bg-[#007acc]/10 border-t border-[#007acc]/20 px-3 flex items-center justify-between text-[9px] text-[#007acc] font-semibold">
         <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#34d399] animate-pulse" />
-          0G Storage Dev Server Online
+          <span className={`w-1.5 h-1.5 rounded-full ${status === 'ready' ? 'bg-[#34d399] animate-pulse' : 'bg-zinc-600'}`} />
+          {status === 'ready' ? 'WebContainer Dev Server Online' : statusLabel[status] || 'WebContainer'}
         </span>
-        <span>Local Web Sandbox (Intel SGX)</span>
+        <span className="flex items-center gap-2">
+          {frameWidth < 100 && (
+            <button
+              onClick={() => setFrameWidth(100)}
+              className="text-[9px] text-zinc-500 hover:text-zinc-300 cursor-pointer"
+            >
+              Full width
+            </button>
+          )}
+          <span>Local Web Sandbox</span>
+        </span>
       </div>
     </div>
   );

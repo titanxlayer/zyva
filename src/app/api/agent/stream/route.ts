@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getConfig } from '@/engine/config';
 import { CerebrasProvider } from '@/engine/providers/cerebras';
 import { OGPrivateComputerProvider, isSupportedModel } from '@/engine/providers/ogpc';
+import { ZyvaProvider } from '@/engine/providers/zyva';
 import { runGraph, type GraphEvent } from '@/engine/orchestrator/graph';
 import { requireAuth } from '@/lib/auth-guard';
 
@@ -40,11 +41,15 @@ export async function POST(req: NextRequest) {
         return;
       }
 
-      // Provider selection: 0G PC (primary) → Cerebras (test fallback)
+      // Provider selection: zyva (DO Router, internal) → 0G PC (primary) → Cerebras (test fallback)
       let provider;
       let resolvedModel: string;
 
-      if (cfg.ogpc.apiKey) {
+      if (model === 'zyva' && cfg.zyva.apiKey) {
+        // Internal ZYVA provider — DO Inference Router
+        resolvedModel = 'router:zyva-v1';
+        provider = new ZyvaProvider(cfg.zyva.apiKey);
+      } else if (cfg.ogpc.apiKey) {
         resolvedModel = model && isSupportedModel(model) ? model : cfg.ogpc.model;
         provider = new OGPrivateComputerProvider(cfg.ogpc.apiKey, cfg.ogpc.baseUrl);
       } else if (cfg.cerebrasApiKey) {

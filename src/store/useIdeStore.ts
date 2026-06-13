@@ -602,7 +602,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
   isCommandPaletteOpen: false,
   isWalletModalOpen: false,
 
-  aiModel: 'minimax-m3',
+  aiModel: 'zyva',
   aiModelNetwork: 'mainnet',
   storageNodeUrl: 'https://mainnet.0g.ai',
   autoSync: true,
