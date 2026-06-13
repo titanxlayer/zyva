@@ -706,8 +706,8 @@ export default function Home() {
         ))}
       </nav>
 
-      {/* 3. STATUS BAR (Paling Bawah) */}
-      <footer className="h-[22px] bg-[#007acc] text-white flex items-center justify-between px-3 shrink-0 text-[11px] font-sans select-none z-10">
+      {/* 3. STATUS BAR (Paling Bawah) — desktop only (cramped on mobile) */}
+      <footer className="hidden md:flex h-[22px] bg-[#007acc] text-white items-center justify-between px-3 shrink-0 text-[11px] font-sans select-none z-10">
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-1 cursor-pointer hover:bg-white/20 px-1 rounded">
             <GitBranch className="w-3.5 h-3.5" />

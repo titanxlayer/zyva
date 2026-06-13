@@ -7,7 +7,7 @@ import { writeFileSafe } from '@/engine/patch/patchEngine';
 import { indexFiles } from '@/engine/retrieval';
 import { findDesignTemplate } from '@/engine/design/designLibrary';
 import { requireAuth } from '@/lib/auth-guard';
-import { ensureUserWorkspace, assertInsideWorkspace, getUserProjectPath } from '@/lib/workspace-isolation';
+import { ensureUserWorkspace, ensureUserWorkspaceSync, getUserWorkspacePath, assertInsideWorkspace, getUserProjectPath } from '@/lib/workspace-isolation';
 
 interface FileNode {
   name: string;
@@ -482,12 +482,14 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
     if (action === 'defaults') {
-      // Cross-platform default locations for the UI (no hardcoded C:/ paths)
+      // Cloud isolation: the UI only ever sees the user's own workspace root —
+      // never the VPS home/cwd.
+      const workspaceRoot = ensureUserWorkspaceSync(userId).replace(/\\/g, '/');
       return NextResponse.json({
         success: true,
-        defaultProjectsDir: getDefaultProjectsDir().replace(/\\/g, '/'),
-        home: os.homedir().replace(/\\/g, '/'),
-        cwd: process.cwd().replace(/\\/g, '/'),
+        defaultProjectsDir: workspaceRoot,
+        home: workspaceRoot,
+        cwd: workspaceRoot,
         platform: process.platform,
       });
     }
@@ -532,7 +534,14 @@ if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 
     if (action === 'browse') {
       const { currentPath } = body;
-      const targetPath = currentPath ? path.resolve(currentPath) : process.cwd();
+      // Cloud isolation: browsing is confined to the user's own workspace.
+      const workspaceRoot = ensureUserWorkspaceSync(userId);
+      let targetPath: string;
+      try {
+        targetPath = currentPath ? assertInsideWorkspace(userId, currentPath) : workspaceRoot;
+      } catch {
+        targetPath = workspaceRoot; // requested path escapes workspace → clamp to root
+      }
 
       if (!fs.existsSync(targetPath)) {
         return NextResponse.json({ success: false, error: 'Path does not exist' }, { status: 404 });
@@ -545,7 +554,12 @@ if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 
       const items = fs.readdirSync(targetPath);
       const directories = [];
-      const parentDir = path.dirname(targetPath);
+      // Never expose a parent above the workspace root.
+      const isRoot = targetPath === workspaceRoot;
+      const rawParent = path.dirname(targetPath);
+      const parentDir = isRoot || !(rawParent === workspaceRoot || rawParent.startsWith(workspaceRoot + path.sep))
+        ? workspaceRoot
+        : rawParent;
 
       for (const item of items) {
         try {
@@ -568,6 +582,7 @@ if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         success: true,
         currentPath: targetPath.replace(/\\/g, '/'),
         parentPath: parentDir.replace(/\\/g, '/'),
+        isRoot,
         directories: directories.sort((a, b) => a.name.localeCompare(b.name))
       });
     }
