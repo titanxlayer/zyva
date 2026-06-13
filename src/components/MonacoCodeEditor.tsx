@@ -3,7 +3,7 @@
 import React, { useEffect } from 'react';
 import Editor, { Monaco } from '@monaco-editor/react';
 import { useIdeStore } from '@/store/useIdeStore';
-import { Code2, FolderOpen, Plus, Zap, ChevronRight } from 'lucide-react';
+import { Code2, FolderOpen, Plus, ChevronRight } from 'lucide-react';
 import { formatWithPrettier } from '@/lib/prettier-format';
 import { REACT_SNIPPETS } from '@/lib/snippets';
 import { THEME_FILE_MAP } from '@/lib/extensions-catalog';
@@ -161,8 +161,8 @@ export default function MonacoCodeEditor() {
         <div className="flex flex-col items-center text-center max-w-[480px] px-6 select-none">
           {/* Logo / Brand */}
           <div className="mb-8 relative">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#007acc]/20 to-[#4ec9b0]/10 border border-[#007acc]/30 flex items-center justify-center mb-4 mx-auto shadow-2xl">
-              <Zap className="w-10 h-10 text-[#007acc]" strokeWidth={1.5} />
+            <div className="w-20 h-20 rounded-2xl bg-[#1c1c22] border border-zinc-800 flex items-center justify-center mb-4 mx-auto shadow-xl overflow-hidden">
+              <img src="/logo.png" alt="ZYVA" className="w-14 h-14 object-contain" />
             </div>
             <h1 className="text-2xl font-bold text-white mb-1 tracking-tight">Welcome to ZYVA IDE</h1>
             <p className="text-[13px] text-zinc-500 leading-relaxed">

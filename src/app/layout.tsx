@@ -16,10 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "ZYVA IDE - The AI-Native IDE Powered by 0G",
   description: "A decentralized, secure sandbox coding environment for autonomous AI agent swarms.",
-  icons: {
-    icon: [{ url: '/favicon.png', type: 'image/png' }],
-    apple: [{ url: '/favicon.png' }],
-  },
+  // Favicon is provided by the src/app/icon.png file convention (auto cache-busted).
 };
 
 export default function RootLayout({
