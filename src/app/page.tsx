@@ -22,6 +22,7 @@ export default function Home() {
   // States for local modal inputs
   const [newProjName, setNewProjName] = useState('my-zyva-app');
   const [newProjTemplate, setNewProjTemplate] = useState<'react' | 'rust' | 'python'>('react');
+  const [newProjDesc, setNewProjDesc] = useState('');
   const [commandSearch, setCommandSearch] = useState('');
   
   const [isOpenFolderModalOpen, setOpenFolderModalOpen] = useState(false);
@@ -744,6 +745,18 @@ export default function Home() {
                 </select>
               </div>
 
+              <div>
+                <label className="text-[12px] text-zinc-400 block mb-1.5">Describe your app <span className="text-zinc-600">(optional — helps pick a design)</span></label>
+                <textarea
+                  data-testid="modal-project-desc-input"
+                  rows={2}
+                  value={newProjDesc}
+                  onChange={(e) => setNewProjDesc(e.target.value)}
+                  placeholder="e.g. a crypto exchange dashboard with dark mode and trading charts"
+                  className="w-full bg-[#2a2d2e] border border-[#2a2d2e] rounded text-white text-[13px] px-3 py-2 outline-none focus:border-[#007acc] resize-none placeholder:text-zinc-600"
+                />
+              </div>
+
               <div className="flex items-center justify-between py-2 border-t border-b border-[#2b2d31]">
                 <span className="text-[12px] text-zinc-300">Use Hardware TEE Sandbox (Intel SGX)</span>
                 <input type="checkbox" defaultChecked className="accent-[#007acc] w-4 h-4 cursor-pointer" />
@@ -759,7 +772,7 @@ export default function Home() {
               </button>
               <button 
                 data-testid="modal-create-project-btn"
-                onClick={() => store.createNewProject(newProjName, newProjTemplate, parentPathInput)}
+                onClick={() => store.createNewProject(newProjName, newProjTemplate, parentPathInput, newProjDesc.trim() || newProjName)}
                 className="px-4 py-1.5 rounded bg-[#007acc] hover:bg-[#005f9e] text-white text-[13px] font-medium transition-colors cursor-pointer"
               >
                 Create Project
