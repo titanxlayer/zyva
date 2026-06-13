@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="landing/assets/logo.png" alt="ZYVA" width="80" height="80" style="border-radius:18px"/>
+<img src="assets/logo.png" alt="ZYVA" width="80" height="80" style="border-radius:18px"/>
 
 # ZYVA
 
