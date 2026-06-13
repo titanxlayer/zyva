@@ -426,7 +426,7 @@ export default function SidebarPanel() {
                     className="w-full bg-[#3c3c3c] border border-[#3c3c3c] rounded text-[#cccccc] text-[13px] p-1.5 outline-none focus:border-[#007acc] cursor-pointer"
                   >
                     <optgroup label="ZYVA">
-                      <option value="zyva">ZYVA</option>
+                      <option value="zyva" disabled>🔒 ZYVA (Coming Soon)</option>
                     </optgroup>
                     <optgroup label="0G Private Computer (pc.0g.ai)">
                       <option value="minimax-m3">MiniMax-M3 · 1M ctx</option>
