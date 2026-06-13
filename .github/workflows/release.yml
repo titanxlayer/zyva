@@ -29,8 +29,15 @@ jobs:
       - name: Build Next (standalone)
         run: npm run build
         env:
+          NEXT_STANDALONE: "1"
           CEREBRAS_API_KEY: ""
           DASHSCOPE_API_KEY: ""
+          OG_PC_API_KEY: ""
+          OG_PC_BASE_URL: "https://pc.0g.ai/v1"
+          E2B_API_KEY: ""
+          DATABASE_URL: "postgresql://x:x@localhost:5432/x"
+          NEXTAUTH_SECRET: "ci-placeholder-secret"
+          NEXTAUTH_URL: "http://localhost:3000"
 
       - name: Install desktop deps
         working-directory: desktop

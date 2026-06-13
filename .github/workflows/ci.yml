@@ -22,6 +22,11 @@ jobs:
       - name: Build (web)
         run: npm run build
         env:
-          # Build does not need real secrets; placeholders keep config happy.
           CEREBRAS_API_KEY: ""
           DASHSCOPE_API_KEY: ""
+          OG_PC_API_KEY: ""
+          OG_PC_BASE_URL: "https://pc.0g.ai/v1"
+          E2B_API_KEY: ""
+          DATABASE_URL: "postgresql://x:x@localhost:5432/x"
+          NEXTAUTH_SECRET: "ci-placeholder-secret"
+          NEXTAUTH_URL: "http://localhost:3000"
