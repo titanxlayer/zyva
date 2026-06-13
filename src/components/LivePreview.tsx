@@ -173,15 +173,10 @@ export default function LivePreview() {
 
   // E2B preview sandbox tracking — kill on tab close / unmount.
   const e2bSandboxId = useRef<string>('');
-  const e2bPopup = useRef<Window | null>(null);
-  const e2bPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const killE2bSandbox = useCallback((useBeacon = false) => {
     const id = e2bSandboxId.current;
     if (!id) return;
     e2bSandboxId.current = '';
-    setE2bUrl('');
-    if (e2bPollTimer.current) { clearInterval(e2bPollTimer.current); e2bPollTimer.current = null; }
     const payload = JSON.stringify({ action: 'kill', sandboxId: id });
     if (useBeacon && typeof navigator !== 'undefined' && navigator.sendBeacon) {
       navigator.sendBeacon('/api/sandbox', new Blob([payload], { type: 'application/json' }));
@@ -190,14 +185,14 @@ export default function LivePreview() {
     }
   }, []);
 
-  // Kill the sandbox if the IDE tab/window is closed, and on unmount.
+  // Kill the sandbox when the IDE tab/window itself is closed. We intentionally
+  // do NOT poll popup.closed: the COOP:same-origin header (needed for WebContainer)
+  // severs the opener↔popup reference, which would false-positive and kill the
+  // sandbox immediately. The 10-min auto-off handles abandoned sandboxes.
   useEffect(() => {
     const onHide = () => killE2bSandbox(true);
     window.addEventListener('pagehide', onHide);
-    return () => {
-      window.removeEventListener('pagehide', onHide);
-      killE2bSandbox(true);
-    };
+    return () => { window.removeEventListener('pagehide', onHide); };
   }, [killE2bSandbox]);
 
   // ── WebContainer boot + start ────────────────────────────────────────────
@@ -297,7 +292,7 @@ export default function LivePreview() {
 
   // ── E2B "Open in Browser" ────────────────────────────────────────────────
   const openInBrowser = useCallback(async () => {
-    if (e2bUrl && e2bSandboxId.current) { e2bPopup.current = window.open(e2bUrl, '_blank'); return; }
+    if (e2bUrl && e2bSandboxId.current) { window.open(e2bUrl, '_blank'); return; }
     setE2bLoading(true);
     try {
       const res = await fetch('/api/sandbox', {
@@ -309,15 +304,7 @@ export default function LivePreview() {
       if (data.url) {
         setE2bUrl(data.url);
         if (data.sandboxId) e2bSandboxId.current = data.sandboxId;
-        const popup = window.open(data.url, '_blank');
-        e2bPopup.current = popup;
-        // When the user closes the E2B tab, kill the sandbox immediately.
-        if (popup) {
-          if (e2bPollTimer.current) clearInterval(e2bPollTimer.current);
-          e2bPollTimer.current = setInterval(() => {
-            if (e2bPopup.current && e2bPopup.current.closed) killE2bSandbox();
-          }, 2000);
-        }
+        window.open(data.url, '_blank');
       } else {
         // Fallback: open WebContainer URL in new tab (same-origin only)
         if (previewUrl) window.open(previewUrl, '_blank');
@@ -327,7 +314,7 @@ export default function LivePreview() {
     } finally {
       setE2bLoading(false);
     }
-  }, [fileContents, previewUrl, e2bUrl, killE2bSandbox]);
+  }, [fileContents, previewUrl, e2bUrl]);
 
   const statusLabel: Record<typeof status, string> = {
     idle: 'Click Run to start preview',
