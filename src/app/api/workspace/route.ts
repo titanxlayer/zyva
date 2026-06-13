@@ -5,6 +5,7 @@ import os from 'os';
 import { exec } from 'child_process';
 import { writeFileSafe } from '@/engine/patch/patchEngine';
 import { indexFiles } from '@/engine/retrieval';
+import { findDesignTemplate } from '@/engine/design/designLibrary';
 import { requireAuth } from '@/lib/auth-guard';
 import { ensureUserWorkspace, assertInsideWorkspace, getUserProjectPath } from '@/lib/workspace-isolation';
 
@@ -602,7 +603,7 @@ if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     }
 
     if (action === 'createProject') {
-      const { name, template } = body;
+      const { name, template, designIntent } = body;
       if (!name || !template) {
         return NextResponse.json({ success: false, error: 'Missing fields' }, { status: 400 });
       }
@@ -624,14 +625,34 @@ if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         fs.writeFileSync(absoluteFilePath, content, 'utf-8');
       }
 
-      // Auto-inject guidance files (CLAUDE.md, AGENTS.md, DESIGN.md, README.md)
+      // Auto-inject guidance files (CLAUDE.md, AGENTS.md). DESIGN.md is handled
+      // separately below via the design-template library.
       const guidanceDir = path.join(process.cwd(), 'templates');
-      const guidanceFiles = ['CLAUDE.md', 'AGENTS.md', 'DESIGN.md'];
+      const guidanceFiles = ['CLAUDE.md', 'AGENTS.md'];
       for (const gf of guidanceFiles) {
         const src = path.join(guidanceDir, gf);
         const dest = path.join(projectPath, gf);
         if (fs.existsSync(src) && !fs.existsSync(dest)) {
           fs.copyFileSync(src, dest);
+        }
+      }
+
+      // ── DESIGN.md: retrieve a curated template by intent (saves generation) ──
+      const designDest = path.join(projectPath, 'DESIGN.md');
+      if (!fs.existsSync(designDest)) {
+        let designWritten = false;
+        try {
+          const match = await findDesignTemplate(String(designIntent || name));
+          if (match) {
+            const header = `<!-- ZYVA design system: matched "${match.name}" (relevance ${(match.score * 100).toFixed(0)}%). ` +
+              `Adapt names/brand to "${name}". Source: voltagent/awesome-design-md (MIT). -->\n\n`;
+            fs.writeFileSync(designDest, header + match.designMd, 'utf-8');
+            designWritten = true;
+          }
+        } catch { /* fall back to static template */ }
+        if (!designWritten) {
+          const staticDesign = path.join(guidanceDir, 'DESIGN.md');
+          if (fs.existsSync(staticDesign)) fs.copyFileSync(staticDesign, designDest);
         }
       }
       // Generate README.md

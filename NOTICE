@@ -9,7 +9,11 @@ here and the license header kept in the copied files.
 
 Currently bundled/adapted (record as they are added):
 
-- (none yet — engine modules under src/engine/ are original ZYVA code)
+- design templates under templates/design-library/ — sourced from
+  voltagent/awesome-design-md (MIT, Copyright (c) 2026 VoltAgent).
+  74 DESIGN.md design-system references, embedded for retrieval. The MIT
+  permission notice is retained here as required.
+- (engine modules under src/engine/ are otherwise original ZYVA code)
 
 Planned upstream sources to integrate (permissive licenses — keep their NOTICE
 when code is copied):

@@ -174,7 +174,7 @@ export interface IdeState {
   setCommandPaletteOpen: (open: boolean) => void;
   setWalletModalOpen: (open: boolean) => void;
   connectWalletFallback: () => Promise<boolean>;
-  createNewProject: (name: string, template: 'react' | 'rust' | 'python', parentPath?: string) => Promise<void>;
+  createNewProject: (name: string, template: 'react' | 'rust' | 'python', parentPath?: string, designIntent?: string) => Promise<void>;
   newChatConversation: () => void;
   loadWorkspace: (customPath?: string) => Promise<void>;
   saveActiveFile: () => Promise<void>;
@@ -1442,9 +1442,14 @@ export const useIdeStore = create<IdeState>((set, get) => ({
     try {
       // ── CREATE PROJECT ─────────────────────────────────────────────────────
       if (action.type === 'create_project' && action.projectName) {
+        // Use the most recent user prompt as the design intent so the library
+        // can retrieve a fitting DESIGN.md instead of generating one.
+        const lastUserMsg = [...get().chatMessages].reverse().find(m => m.sender === 'user')?.text || '';
         await get().createNewProject(
           action.projectName,
-          action.template || 'react'
+          action.template || 'react',
+          undefined,
+          lastUserMsg || action.projectName,
         );
         updateActionStatus('applied');
         set(state => ({
@@ -1754,7 +1759,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
     }
   },
 
-  createNewProject: async (name, template, parentPath) => {
+  createNewProject: async (name, template, parentPath, designIntent) => {
     const time = new Date().toLocaleTimeString();
     const templateData = TEMPLATE_FILES[template];
     const filenames = Object.keys(templateData);
@@ -1777,7 +1782,8 @@ export const useIdeStore = create<IdeState>((set, get) => ({
           action: 'createProject',
           parentPath,
           name,
-          template
+          template,
+          designIntent: designIntent || name,
         })
       });
       const data = await res.json();
