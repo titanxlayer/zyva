@@ -17,7 +17,7 @@
 
 ---
 
-![ZYVA IDE Screenshot](landing/assets/screenshot.png)
+![ZYVA IDE Screenshot](assets/screenshot.png)
 
 ---
 

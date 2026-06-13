@@ -20,30 +20,43 @@ zyva key.md
 /.zyva-data/
 *.zyva-trace.json
 
-# third-party vendor clones (kept OUTSIDE source; never bundled)
+# third-party vendor clones
 /vendor/
 /temp_opencode/
 opencode.zip
 
-# testing / playwright
+# testing / playwright — local only
 /test-results/
 /playwright-report/
 test-*.png
 test-preview-*.png
+test-agent-mode.png
+test-swarm-stream.png
+test-preview-full.png
 
 # os
 .DS_Store
 *.log
 
-# editor / agent / local docs
+# editor / local internal
 /.vscode/
 /tests/
 AGENTS.md
 CLAUDE.md
 
+# internal planning & specs (not for public)
+/docs/
+/.kiro/
+
+# internal test scripts
+/scripts/
+
 # desktop packaging artifacts
 /desktop/node_modules/
 /desktop/dist/
 
-# landing page is a VPS-only asset, not tracked in the app repo
+# landing page is VPS-only asset
 /landing/
+
+/src/generated/prisma
+tsconfig.tsbuildinfo
