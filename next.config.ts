@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   // standalone only when building for desktop (set NEXT_STANDALONE=1)
   ...(process.env.NEXT_STANDALONE === '1' ? { output: 'standalone' } : {}),
 
+  // Native modules must not be bundled by the server compiler.
+  serverExternalPackages: ['better-sqlite3'],
+
   // Required for WebContainer (WASM + SharedArrayBuffer)
   async headers() {
     return [

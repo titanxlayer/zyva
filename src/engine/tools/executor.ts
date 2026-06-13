@@ -199,3 +199,32 @@ export function parseDoneSignal(text: string): { done: boolean; summary: string 
     return { done: true, summary: '' };
   }
 }
+
+/**
+ * Fallback parser: the model may emit [ZYVA_FILE]/[ZYVA_EDIT] blocks instead of
+ * JSON tool calls (its natural format). Convert them to tool calls so the loop
+ * still applies the changes. Returns synthetic write_file / apply_edit calls.
+ */
+export function parseZyvaBlocks(text: string): ToolCall[] {
+  const calls: ToolCall[] = [];
+  let i = 0;
+
+  const fileRe = /\[ZYVA_FILE:\s*(.+?)\]\s*```[\w]*\n?([\s\S]*?)(?:```\s*(?:\[\/ZYVA_FILE\])?|\[\/ZYVA_FILE\]|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = fileRe.exec(text)) !== null) {
+    const path = m[1].trim();
+    const content = m[2].replace(/```\s*$/, '').replace(/\[\/ZYVA_FILE\]\s*$/, '').trim();
+    if (content.length > 5) calls.push({ id: `zf${i++}`, name: 'write_file', args: { path, content } });
+  }
+
+  const editRe = /\[ZYVA_EDIT:\s*(.+?)\]\s*([\s\S]*?)(?:\[\/ZYVA_EDIT\]|(?=\[ZYVA_|$))/g;
+  while ((m = editRe.exec(text)) !== null) {
+    const path = m[1].trim();
+    const srRe = /<<<<<<< SEARCH\r?\n([\s\S]*?)\r?\n=======\r?\n([\s\S]*?)\r?\n>>>>>>> REPLACE/g;
+    let sm: RegExpExecArray | null;
+    while ((sm = srRe.exec(m[2])) !== null) {
+      calls.push({ id: `ze${i++}`, name: 'apply_edit', args: { path, search: sm[1], replacement: sm[2] } });
+    }
+  }
+  return calls;
+}

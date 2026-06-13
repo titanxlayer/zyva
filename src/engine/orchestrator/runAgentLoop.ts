@@ -21,8 +21,8 @@ import type { ReasoningProvider, ChatMessage } from '../providers/types';
 import { Trace } from '../observability/trace';
 import { retrieve } from '../retrieval';
 import { buildRepoMap } from '../repomap/buildRepoMap';
-import { buildToolSystemBlock, TOOL_DEFS } from '../tools/types';
-import { executeTool, parseToolCalls, parseDoneSignal } from '../tools/executor';
+import { buildToolSystemBlock } from '../tools/types';
+import { executeTool, parseToolCalls, parseDoneSignal, parseZyvaBlocks } from '../tools/executor';
 import type { ToolCall, ToolResult } from '../tools/types';
 
 export const MAX_STEPS = 20;
@@ -148,7 +148,12 @@ export async function runAgentLoop(input: LoopInput): Promise<LoopOutput> {
 
     // Check for tool calls
     const { calls, rest } = parseToolCalls(fullText);
-    if (calls.length === 0) {
+
+    // Fallback: model emitted [ZYVA_FILE]/[ZYVA_EDIT] instead of JSON tool calls
+    const zyvaCalls = calls.length === 0 ? parseZyvaBlocks(fullText) : [];
+    const allCalls = calls.length > 0 ? calls : zyvaCalls;
+
+    if (allCalls.length === 0) {
       // Model responded with plain text + no tool call + no done signal
       // Accept it as the final answer / summary
       summary = rest.slice(0, 500);
@@ -161,7 +166,7 @@ export async function runAgentLoop(input: LoopInput): Promise<LoopOutput> {
 
     // Execute each tool call and accumulate results
     const results: ToolResult[] = [];
-    for (const call of calls) {
+    for (const call of allCalls) {
       emit({ type: 'tool_call', step: step + 1, call });
       const result = await executeTool(call, input.projectPath, {
         terminalLogs: input.terminalLogs,
@@ -173,6 +178,14 @@ export async function runAgentLoop(input: LoopInput): Promise<LoopOutput> {
         const p = String(call.args.path ?? '');
         if (p && !filesChanged.includes(p)) filesChanged.push(p);
       }
+    }
+
+    // If the model used ZYVA blocks (not tools), nudge it to confirm completion.
+    if (zyvaCalls.length > 0) {
+      const wrote = zyvaCalls.map((c) => String(c.args.path)).join(', ');
+      messages.push({ role: 'user', content: `Applied changes to: ${wrote}. If the task is complete, emit {"done":true,"summary":"..."}; otherwise continue with tool calls.` });
+      step++;
+      continue;
     }
 
     // Inject tool results as a new user message
