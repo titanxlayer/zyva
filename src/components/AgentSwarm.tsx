@@ -113,7 +113,7 @@ export default function AgentSwarm({ width = 360 }: { width?: number }) {
   // ... (ModelSelector inlined below)
 
   return (
-    <div className="bg-[#181818] border-l border-[#2b2d31] flex flex-col shrink-0 h-full overflow-hidden" style={{ width: `${width}px`, minWidth: 240, maxWidth: 700 }}>
+    <div className="bg-[#181818] border-l border-[#2b2d31] flex flex-col shrink-0 h-full overflow-hidden" style={{ width: `${width}px`, minWidth: 240, maxWidth: 1024 }}>
       {/* Tab Switcher */}
       <div className="flex border-b border-[#2b2d31] h-[35px] bg-[#151515] shrink-0 select-none">
         <button data-testid="right-panel-swarm-tab" onClick={() => setActiveTab('swarm')}

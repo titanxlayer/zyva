@@ -12,12 +12,28 @@ import {
   Search, Settings, Files, GitBranch, Box, LayoutTemplate,
   User, ChevronRight, X, RefreshCw, AlertCircle,
   PanelLeftClose, PanelLeftOpen, Code2, Database, ChevronDown,
-  Terminal, ShieldCheck, Wallet, Eye, EyeOff
+  Terminal, ShieldCheck, Wallet, Eye, EyeOff, MessageSquare
 } from 'lucide-react';
+
+/** Track viewport: mobile flag (Tailwind md breakpoint) + current width. */
+function useViewport(breakpoint = 768) {
+  const [vp, setVp] = useState({ isMobile: false, width: 1280 });
+  useEffect(() => {
+    const check = () => setVp({ isMobile: window.innerWidth < breakpoint, width: window.innerWidth });
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, [breakpoint]);
+  return vp;
+}
+
+type MobileView = 'files' | 'code' | 'preview' | 'chat';
 
 export default function Home() {
   const store = useIdeStore();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { isMobile, width: vpWidth } = useViewport();
+  const [mobileView, setMobileView] = useState<MobileView>('chat');
 
   // States for local modal inputs
   const [newProjName, setNewProjName] = useState('my-zyva-app');
@@ -211,8 +227,8 @@ export default function Home() {
             <div className="w-3 h-3 rounded-full bg-[#61c554] border border-[#52a63e]"></div>
           </div>
 
-          {/* Menu Items */}
-          <div className="flex items-center ml-5 space-x-1 relative" ref={dropdownRef}>
+          {/* Menu Items — desktop only */}
+          <div className="hidden md:flex items-center ml-5 space-x-1 relative" ref={dropdownRef}>
             {/* Antigravity / ZYVA Menu */}
             <div className="relative">
               <button 
@@ -408,7 +424,7 @@ export default function Home() {
         </div>
 
         {/* Center Breadcrumbs / Project Name */}
-        <div className="w-1/3 flex justify-center">
+        <div className="hidden md:flex w-1/3 justify-center">
           <div 
             onClick={() => store.setCommandPaletteOpen(true)}
             className="flex items-center bg-[#2b2d31] hover:bg-[#323438] border border-[#3b3d41] rounded-md px-3 py-1 w-full max-w-[400px] cursor-pointer transition-colors select-none"
@@ -492,8 +508,8 @@ export default function Home() {
       {/* 2. MAIN WORKSPACE LAYOUT */}
       <div className="flex-1 flex flex-row overflow-hidden">
         
-        {/* BILAH AKTIVITAS (Activity Bar - Paling Kiri) */}
-        <div className="w-[48px] bg-[#181818] border-r border-[#2b2d31] flex flex-col items-center py-3 justify-between shrink-0 z-10 select-none">
+        {/* BILAH AKTIVITAS (Activity Bar - Paling Kiri) — desktop only */}
+        <div className="hidden md:flex w-[48px] bg-[#181818] border-r border-[#2b2d31] flex-col items-center py-3 justify-between shrink-0 z-10 select-none">
           <div className="flex flex-col space-y-4 items-center w-full">
             <div 
               data-testid="activity-explorer" 
@@ -557,11 +573,15 @@ export default function Home() {
           </div>
         </div>
 
-        {/* SIDEBAR PANEL */}
-        {store.isExplorerOpen && <SidebarPanel />}
+        {/* SIDEBAR PANEL — desktop: toggle; mobile: only in "files" view */}
+        {(isMobile ? mobileView === 'files' : store.isExplorerOpen) && (
+          <div className={isMobile ? 'flex w-full min-w-0' : 'contents'}>
+            <SidebarPanel />
+          </div>
+        )}
 
         {/* AREA TENGAH: EDITOR KODE (ATAS) & CONSOLE TERMINAL (BAWAH) */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#1e1e1e] h-full">
+        <div className={`flex-1 flex-col min-w-0 bg-[#1e1e1e] h-full ${isMobile && !(mobileView === 'code' || mobileView === 'preview') ? 'hidden' : 'flex'}`}>
           
           {/* EDITOR KODE */}
           <div className="flex-1 flex flex-col min-h-0 relative">
@@ -632,32 +652,59 @@ export default function Home() {
 
             {/* Content Area Editor (Split Panel: Editor & Live Preview) */}
             <div className="flex-1 flex overflow-hidden relative group">
-              <div className="flex-1 h-full min-w-0 relative">
+              <div className={`flex-1 h-full min-w-0 relative ${isMobile && mobileView === 'preview' ? 'hidden' : ''}`}>
                 <MonacoCodeEditor />
               </div>
-              {store.isPreviewOpen && (
-                <div className="w-[50%] h-full shrink-0">
+              {((isMobile && mobileView === 'preview') || (!isMobile && store.isPreviewOpen)) && (
+                <div className={`${isMobile ? 'w-full' : 'w-[50%]'} h-full shrink-0`}>
                   <LivePreview />
                 </div>
               )}
             </div>
           </div>
 
-          {/* TERMINAL & CONSOLE PANEL (DI BAGIAN BAWAH EDITOR) */}
-          <TerminalConsole />
+          {/* TERMINAL & CONSOLE PANEL — desktop only (too cramped on mobile) */}
+          {!isMobile && <TerminalConsole />}
 
         </div>
 
         {/* PANEL KANAN (AI Agents + AI Activity) — resizable */}
-        {/* Drag handle */}
+        {/* Drag handle — desktop only */}
         <div
           onMouseDown={startResize}
-          className="w-1 bg-[#2b2d31] hover:bg-[#007acc] cursor-col-resize shrink-0 transition-colors active:bg-[#007acc]"
+          className="hidden md:block w-1 bg-[#2b2d31] hover:bg-[#007acc] cursor-col-resize shrink-0 transition-colors active:bg-[#007acc]"
           title="Drag to resize panel"
           style={{ userSelect: 'none' }}
         />
-        <AgentSwarm width={rightPanelWidth} />
+        <div className={isMobile ? (mobileView === 'chat' ? 'flex w-full min-w-0' : 'hidden') : 'flex'}>
+          <AgentSwarm width={isMobile ? Math.min(vpWidth, 900) : rightPanelWidth} />
+        </div>
       </div>
+
+      {/* MOBILE BOTTOM TAB BAR — switch panels on small screens */}
+      <nav className="md:hidden flex items-stretch h-[54px] bg-[#181818] border-t border-[#2b2d31] shrink-0 z-20 select-none">
+        {([
+          { key: 'chat', label: 'Chat', Icon: MessageSquare },
+          { key: 'preview', label: 'Preview', Icon: Eye },
+          { key: 'code', label: 'Code', Icon: Code2 },
+          { key: 'files', label: 'Files', Icon: Files },
+        ] as { key: MobileView; label: string; Icon: typeof Files }[]).map(({ key, label, Icon }) => (
+          <button
+            key={key}
+            data-testid={`mobile-tab-${key}`}
+            onClick={() => {
+              setMobileView(key);
+              if (key === 'files') { store.setActiveSidebarTab('explorer'); store.setIsExplorerOpen(true); }
+            }}
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors cursor-pointer ${
+              mobileView === key ? 'text-[#4ec9b0] bg-[#1e1e1e]' : 'text-[#858585] hover:text-white'
+            }`}
+          >
+            <Icon className="w-5 h-5" strokeWidth={1.6} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
 
       {/* 3. STATUS BAR (Paling Bawah) */}
       <footer className="h-[22px] bg-[#007acc] text-white flex items-center justify-between px-3 shrink-0 text-[11px] font-sans select-none z-10">

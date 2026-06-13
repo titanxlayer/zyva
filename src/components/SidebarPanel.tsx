@@ -97,7 +97,7 @@ export default function SidebarPanel() {
   }, [store.activeSidebarTab, store.projectPath]);
 
   return (
-    <div className="w-[240px] bg-[#181818] border-r border-[#2b2d31] flex flex-col shrink-0">
+    <div className="w-full md:w-[240px] bg-[#181818] border-r border-[#2b2d31] flex flex-col shrink-0">
       <div className="px-4 py-2 flex items-center justify-between shrink-0 select-none relative">
         <span className="text-[11px] text-[#cccccc] font-semibold uppercase tracking-wider font-sans">
           {store.activeSidebarTab === 'explorer' && 'Explorer'}
