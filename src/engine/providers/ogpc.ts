@@ -81,7 +81,7 @@ export class OGPrivateComputerProvider implements ReasoningProvider {
         if (data === '[DONE]') { done = true; break; }
         try {
           const delta = JSON.parse(data).choices?.[0]?.delta;
-          if (delta?.content) content += delta.content;
+          if (delta?.content) { content += delta.content; opts.onToken?.(delta.content); }
         } catch { /* ignore partial frames */ }
       }
     }

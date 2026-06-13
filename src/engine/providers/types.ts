@@ -17,6 +17,8 @@ export interface GenerateOptions {
   temperature?: number;
   maxTokens?: number;
   signal?: AbortSignal;
+  /** Called with each streamed text delta as it arrives (for live UI streaming). */
+  onToken?: (delta: string) => void;
 }
 
 export interface GenerateResult {

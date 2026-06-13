@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       message, ogApiKey, apiKey, model, activeFile, activeFileContent,
-      projectName, projectPath, fileTreeStr, history = [], agentMode,
+      projectName, projectPath, fileTreeStr, history = [], agentMode, stream,
     } = body;
 
     if (!message) {
@@ -160,6 +160,63 @@ export async function POST(req: NextRequest) {
         ? '\n\n## RELEVANT CODE\n' + hits.map((r) => `### ${r.path}\n\`\`\`\n${r.content.slice(0, 1000)}\n\`\`\``).join('\n')
         : '';
     };
+
+    // ── Streaming path (ZYVA / 0G PC) — token-by-token SSE, no timeout wall ───
+    const canZyva = ZYVA_MODEL_IDS.has(targetModel) && !!cfg.zyva.apiKey;
+    const canOgPc = isOgPcModel(targetModel) && !!cfg.ogpc.apiKey;
+    if (stream && (canZyva || canOgPc)) {
+      const provider = canZyva
+        ? new ZyvaProvider(cfg.zyva.apiKey)
+        : new OGPrivateComputerProvider(cfg.ogpc.apiKey, cfg.ogpc.baseUrl);
+      const sourceLabel = canZyva ? 'ZYVA' : `0G Private Computer (${targetModel})`;
+      const ctx = await buildContext();
+      const msgs = [
+        { role: 'system' as const, content: systemPrompt + ctx },
+        ...normalizedHistory,
+        { role: 'user' as const, content: message },
+      ];
+      const encoder = new TextEncoder();
+      const trace = new Trace(message);
+      trace.set({ model: canZyva ? 'zyva-v1' : targetModel, source: canZyva ? 'zyva-stream' : '0gpc-stream' });
+
+      const readable = new ReadableStream({
+        async start(controller) {
+          const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+          try {
+            const out = await provider.generate({
+              model: canZyva ? ZYVA_MODEL_ID : targetModel,
+              messages: msgs,
+              temperature: 0.3,
+              signal: AbortSignal.timeout(180_000),
+              onToken: (t) => send({ type: 'token', text: t }),
+            });
+            send({
+              type: 'done',
+              reply: rescueFormat(out.text, fallbackPath),
+              source: sourceLabel,
+              teeRuntime,
+              traceId: trace.record.id,
+              rateLimit: canZyva ? (provider as ZyvaProvider).lastRateLimit : undefined,
+              teeAttestation: out.teeAttestation,
+            });
+          } catch (err) {
+            send({ type: 'error', error: (err as Error).message || 'inference failed' });
+          } finally {
+            await trace.flush();
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(readable, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        },
+      });
+    }
 
     // ── 0. ZYVA (DO Inference Router) — INTERNAL ONLY (stress testing) ─────────
     if (ZYVA_MODEL_IDS.has(targetModel) && cfg.zyva.apiKey) {

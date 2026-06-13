@@ -1045,9 +1045,82 @@ export const useIdeStore = create<IdeState>((set, get) => ({
           history: get().chatMessages
             .filter(m => !m.isThinking)
             .slice(-6)
-            .map(m => ({ sender: m.sender, text: m.text.substring(0, 500) }))
+            .map(m => ({ sender: m.sender, text: m.text.substring(0, 500) })),
+          stream: true,
         })
       });
+
+      // ── Streaming (SSE) path: live token typing, no timeout wall ──────────
+      const ctype = res.headers.get('content-type') || '';
+      if (ctype.includes('text/event-stream') && res.body) {
+        const placeholderId = Math.random().toString();
+        set((state) => ({
+          chatMessages: [...state.chatMessages, {
+            id: placeholderId, sender: 'agent', agentName: 'ZYVA Agent',
+            text: '', timestamp: new Date().toLocaleTimeString(), color: '#4ec9b0', isThinking: true,
+          }],
+        }));
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '', live = '', rawReply = '', doneMeta: { teeRuntime?: { status: string; label: string; isolated?: boolean; verified?: boolean } } | null = null, streamErr = '';
+        let finished = false;
+        while (!finished) {
+          const { value, done } = await reader.read();
+          finished = done;
+          if (!value) continue;
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split('\n\n');
+          buf = parts.pop() || '';
+          for (const part of parts) {
+            const dl = part.split('\n').find(l => l.startsWith('data: '));
+            if (!dl) continue;
+            let ev: { type: string; text?: string; reply?: string; error?: string; teeRuntime?: { status: string; label: string; isolated?: boolean; verified?: boolean } };
+            try { ev = JSON.parse(dl.slice(6)); } catch { continue; }
+            if (ev.type === 'token') {
+              live += ev.text || '';
+              // show prose live; hide raw action/code blocks while typing
+              const display = live.replace(/\[ZYVA_(FILE|EDIT|PROJECT|CMD)[\s\S]*$/, '\n\n✍️ writing code…');
+              set((state) => ({ chatMessages: state.chatMessages.map(m => m.id === placeholderId ? { ...m, text: display } : m) }));
+            } else if (ev.type === 'done') {
+              rawReply = ev.reply || live; doneMeta = ev;
+            } else if (ev.type === 'error') {
+              streamErr = ev.error || 'inference failed';
+            }
+          }
+        }
+
+        if (streamErr && !rawReply) {
+          set((state) => ({
+            chatMessages: state.chatMessages.map(m => m.id === placeholderId ? { ...m, text: `⚠️ ${streamErr}`, isThinking: false } : m),
+            isAgentThinking: false,
+          }));
+          return;
+        }
+
+        const { textPart, actions } = parseAgentReply(rawReply || live);
+        const cleaned = textPart.replace(/\n*---\s*🛡️[\s\S]*$/, '').replace(/^\[0G Inference Fallback:[^\]]+\]\s*/i, '').trim();
+        let teeAttestation: TeeAttestation | undefined;
+        if (doneMeta?.teeRuntime) teeAttestation = { status: doneMeta.teeRuntime.status, label: doneMeta.teeRuntime.label, isolated: !!doneMeta.teeRuntime.isolated, verified: !!doneMeta.teeRuntime.verified };
+        const finalMsg: ChatMessage = {
+          id: placeholderId, sender: 'agent', agentName: 'ZYVA Agent',
+          text: cleaned || (actions.length ? 'Done.' : '…'),
+          timestamp: new Date().toLocaleTimeString(), color: '#4ec9b0',
+          actions: actions.length ? actions : undefined, teeAttestation,
+        };
+        set((state) => ({
+          chatMessages: state.chatMessages.map(m => m.id === placeholderId ? finalMsg : m),
+          isAgentThinking: false,
+        }));
+        if (get().autonomousMode && actions.length > 0) {
+          for (const action of actions) {
+            if (action.type === 'run_command') continue;
+            await get().applyAgentAction(placeholderId, action.id);
+          }
+        }
+        return;
+      }
+
       const data = await res.json();
       
       const queryLogs: string[] = [];
