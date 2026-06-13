@@ -1,11 +1,53 @@
+<div align="center">
+
+<img src="landing/assets/logo.png" alt="ZYVA" width="80" height="80" style="border-radius:18px"/>
+
 # ZYVA
 
-**Build apps with AI — in the cloud or on your desktop.** ZYVA is an AI coding environment with a VS Code–style workspace, real semantic codebase memory, a bounded multi-agent graph, and a security-first execution layer.
+**AI-powered Cloud IDE — build and ship apps from your browser.**
 
-- **Cloud IDE** (coming soon) — full browser workspace backed by 0G TEE + Firecracker VM + persistent storage. No install required.
-- **Desktop app** — same AI workspace running locally on your machine, full offline support.
+[![Release](https://img.shields.io/github/v/release/titanxlayer/zyva?style=flat-square&color=7c3aed)](https://github.com/titanxlayer/zyva/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/titanxlayer/zyva/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/titanxlayer/zyva/actions)
+[![0G PC](https://img.shields.io/badge/inference-0G_Private_Computer-7c3aed?style=flat-square)](https://pc.0g.ai)
 
-AI inference is powered by **[0G Private Computer](https://pc.0g.ai)** — OpenAI-compatible, every request runs inside a TEE on the 0G network. No BYOK required.
+[**Try Cloud IDE →**](https://app.zyva.dev) · [**Download Desktop**](https://github.com/titanxlayer/zyva/releases) · [**Docs**](https://app.zyva.dev/docs) · [**zyva.dev**](https://zyva.dev)
+
+</div>
+
+---
+
+![ZYVA IDE Screenshot](landing/assets/screenshot.png)
+
+---
+
+## What is ZYVA?
+
+ZYVA is a Lovable-style AI coding environment with two modes:
+
+| | Cloud IDE | Desktop App |
+|---|---|---|
+| **Access** | Browser — no install | Electron — local |
+| **Execution** | WebContainer (browser) + E2B sandbox | Local machine directly |
+| **Isolation** | 0G TEE + Firecracker VM per session | User's own machine |
+| **Storage** | 0G persistent storage | Local filesystem |
+| **AI** | 0G Private Computer (TEE-attested) | 0G Private Computer |
+
+**Cloud IDE is the primary product.** The desktop app stays available for teams that need fully local control.
+
+---
+
+## AI Inference — 0G Private Computer
+
+All inference runs on **[0G Private Computer](https://pc.0g.ai)** — OpenAI-compatible API, every request inside a TEE. No BYOK required.
+
+| Model | Context | Best for |
+|---|---|---|
+| `minimax-m3` ⭐ | 1M | Multimodal, default |
+| `glm-5.1` | 207K | Long-horizon coding |
+| `qwen3.7-max` | 1M | Function calling |
+| `qwen3.6-plus` | 1M | Multilingual |
+| `deepseek-v4-pro` | 1M | Agentic coding |
 
 ---
 
@@ -14,164 +56,163 @@ AI inference is powered by **[0G Private Computer](https://pc.0g.ai)** — OpenA
 | Layer | Technology |
 |---|---|
 | UI shell | Next.js 16 (App Router), React 19, Monaco editor, Tailwind v4, Zustand, Framer Motion |
-| Reasoning | **0G Private Computer** (`pc.0g.ai`) — OpenAI-compatible, TEE-attested. Models: MiniMax-M3, GLM-5.1, Qwen3.7-Max, Qwen3.6-Plus, DeepSeek-V4-Pro |
-| Embeddings | Qwen — `text-embedding-v4` (DashScope cloud) or local Qwen (Ollama); switchable |
-| Rerank | `qwen3-rerank` (two-stage retrieval) |
-| Vector store | Local file-backed store (default, offline) or Qdrant (server/team) |
-| Parser/chunker | Code-aware semantic chunker (tree-sitter seam) |
-| Orchestration | Bounded multi-agent graph: Architect → Frontend/Backend → Review (SSE streaming) |
-| Patch engine | Aider-style SEARCH/REPLACE + atomic writes + per-action snapshot & rollback |
-| Execution | Command policy (allow / approve / deny) + project containment + timeout |
-| Observability | Local trace store (always on) + optional Langfuse |
+| Inference | **0G Private Computer** (`pc.0g.ai`) — OpenAI-compatible, TEE-attested |
+| Auth | NextAuth v5 — Google, GitHub OAuth + SIWE wallet (0G Chain) |
+| Database | PostgreSQL (Prisma v7) — users, sessions, projects, traces |
+| Sandbox | E2B — on-demand, build/install only, torn down after task |
+| Git | Real `git commit + push` to GitHub from the IDE Source Control panel |
+| Embeddings | Qwen `text-embedding-v4` (DashScope) or local Ollama |
+| Rerank | `qwen3-rerank` |
+| Vector store | Local file-backed (default) or Qdrant |
+| Observability | Local trace store + optional Langfuse |
+| Desktop | Electron wrapper around Next.js standalone build |
 
 ---
 
-## Architecture
+## Repository Map
 
-```mermaid
-flowchart TD
-    subgraph Desktop["ZYVA Desktop (user machine)"]
-        UI["UI Shell<br/>Monaco · Chat · Live Preview · Swarm panel"]
-        Store["State (Zustand)"]
-        subgraph Engine["src/engine — runtime"]
-            Orch["Orchestrator<br/>runAgent · multi-agent graph"]
-            Retr["Retrieval<br/>chunker → embed → store → rerank"]
-            Patch["Patch engine<br/>SEARCH/REPLACE · snapshot · rollback"]
-            Sec["Security<br/>command policy · containment"]
-            Obs["Observability<br/>trace store"]
-            Prov["Providers<br/>reasoning · embedding · rerank"]
-        end
-        VS["Vector store (local)"]
-    end
-
-    subgraph External["External / optional"]
-        LLM["0G Private Computer<br/>(pc.0g.ai — TEE-attested)<br/>MiniMax-M3 · GLM-5.1 · Qwen3.7-Max<br/>Qwen3.6-Plus · DeepSeek-V4-Pro"]
-        EMB["Qwen embeddings<br/>(DashScope or local Ollama)"]
-        QD["Qdrant (optional)"]
-        LF["Langfuse (optional)"]
-    end
-
-    UI <--> Store --> Orch
-    Orch --> Retr --> Prov
-    Orch --> Prov
-    Prov --> LLM
-    Prov --> EMB
-    Retr --> VS
-    Retr -. team mode .-> QD
-    Orch --> Patch
-    Orch --> Sec
-    Orch --> Obs -. optional .-> LF
 ```
-
-### Retrieval (semantic memory)
-
-```mermaid
-flowchart LR
-    F["File change / index"] --> C["Semantic chunker"]
-    C --> E["Qwen embeddings<br/>(text-embedding-v4 / local)"]
-    E --> S["Vector store<br/>(local / Qdrant)"]
-    Q["User query"] --> QE["Embed query"]
-    QE --> KNN["Cosine top-K"]
-    S --> KNN
-    KNN --> RR["qwen3-rerank<br/>top-N"]
-    RR --> CTX["Inject context → reasoning model"]
+zyva-app/
+├── src/
+│   ├── app/                    Next.js App Router
+│   │   ├── api/
+│   │   │   ├── agent/          SSE streaming multi-agent graph
+│   │   │   ├── ai/             Chat completions
+│   │   │   ├── auth/           NextAuth route handler
+│   │   │   ├── git/            Real git commit + push to GitHub
+│   │   │   ├── sandbox/        E2B sandbox executor endpoint
+│   │   │   ├── terminal/       Secure command execution
+│   │   │   ├── traces/         Observability trace list
+│   │   │   └── workspace/      File tree, save, create project
+│   │   ├── auth/               Sign-in + error pages
+│   │   └── docs/               Public documentation pages
+│   │
+│   ├── components/
+│   │   ├── AgentSwarm.tsx      Right panel: Swarm + AI Chat
+│   │   ├── ChatComponents.tsx  Markdown, action cards, TEE badge
+│   │   ├── IdeBodyClass.tsx    IDE vs page scroll isolation
+│   │   ├── LivePreview.tsx     Babel-transpiled iframe preview
+│   │   ├── MonacoCodeEditor.tsx Editor + Prettier + Emmet + snippets
+│   │   ├── SidebarPanel.tsx    Explorer, Source Control, Extensions
+│   │   └── TerminalConsole.tsx Secure terminal with TEE badge
+│   │
+│   ├── engine/                 ← Core runtime
+│   │   ├── config.ts           Central env/config
+│   │   ├── execution/
+│   │   │   └── e2bExecutor.ts  E2B on-demand sandbox
+│   │   ├── git/
+│   │   │   └── gitOps.ts       Real git operations
+│   │   ├── observability/
+│   │   │   └── trace.ts        Trace store + Langfuse forwarder
+│   │   ├── orchestrator/       Multi-agent graph (Architect → Review)
+│   │   ├── patch/              SEARCH/REPLACE + snapshot/rollback
+│   │   ├── providers/
+│   │   │   ├── ogpc.ts         0G Private Computer provider ⭐
+│   │   │   ├── cerebras.ts     Cerebras (test fallback)
+│   │   │   ├── dashscope.ts    Qwen embeddings
+│   │   │   └── types.ts        Provider interfaces
+│   │   ├── retrieval/          Chunker + vector store + query
+│   │   ├── security/           Command policy (allow/approve/deny)
+│   │   └── tee/                Honest TEE attestation state
+│   │
+│   ├── lib/
+│   │   ├── auth-guard.ts       API auth middleware helper
+│   │   ├── extensions-catalog.ts Extension definitions
+│   │   ├── file-icons.ts       File icon mapping
+│   │   ├── github.ts           GitHub OAuth token + repo API
+│   │   ├── prettier-format.ts  Browser Prettier integration
+│   │   ├── prisma.ts           Prisma client singleton
+│   │   ├── snippets.ts         React/TS code snippets
+│   │   ├── wallet.ts           SIWE wallet signature verify
+│   │   └── workspace-isolation.ts Per-user path isolation
+│   │
+│   ├── auth.ts                 NextAuth v5 config
+│   ├── middleware.ts            Edge auth middleware
+│   └── store/
+│       └── useIdeStore.ts      Zustand global state
+│
+├── templates/                  Injected into every new user project
+│   ├── CLAUDE.md               Entry point for AI agent context
+│   ├── AGENTS.md               Stack rules + coding conventions
+│   └── DESIGN.md               ZYVA design system (dark, #7c3aed)
+│
+├── landing/                    Static landing page (zyva.dev)
+│   └── assets/
+│       ├── logo.png
+│       └── screenshot.png
+│
+├── desktop/                    Electron wrapper
+│   ├── main.js
+│   ├── prepackage.mjs
+│   └── package.json
+│
+├── prisma/
+│   └── schema.prisma           DB schema (users, sessions, projects, traces)
+│
+├── gateway/                    Standalone embedding gateway (server mode)
+│
+├── scripts/                    Test + stress-test scripts
+│   ├── test-auth-flow.mjs
+│   ├── test-extensions.mjs
+│   └── test-cloud-stress.mjs
+│
+└── .github/workflows/
+    ├── ci.yml                  Build + lint on push
+    └── release.yml             Cross-platform desktop builds on tag
 ```
-
-### Multi-agent graph (bounded)
-
-```mermaid
-flowchart LR
-    T["Task"] --> A["Architect<br/>plan (1-4 steps)"]
-    A --> R{"route step"}
-    R -->|UI| FE["Frontend agent"]
-    R -->|API/logic| BE["Backend agent"]
-    FE --> RV["Review agent"]
-    BE --> RV
-    RV -->|issues| DBG["Debug agent<br/>(bounded retry ≤1)"]
-    DBG --> RV
-    RV -->|ok| OUT["Aggregated scoped patches"]
-```
-
-Hard bounds: max steps, max retries, token caps, **no recursive self-invocation**. Every node is traced; progress streams to the Swarm panel via SSE.
 
 ---
 
-## Security model
-
-- The LLM **never** executes shell directly. Commands are classified:
-  - **allow** — safe, may auto-run (`npm install`, `npm run build`, `eslint`, `tsc`, `pytest`…)
-  - **approve** — requires explicit user confirmation (`rm`, `chmod`, `curl|bash`, `docker`, chaining…)
-  - **deny** — never run (`rm -rf`, `sudo`, fork bombs, disk writes…)
-- Execution is contained to the project directory and bounded by a timeout.
-- Secrets live in `.env.local` (gitignored) and are never shipped in the client binary or exposed over HTTP.
-- TEE status is reported honestly (`TEE Runtime Connected · Sandbox Active`); ZYVA does **not** claim "verified" attestation until a real quote exists.
-
----
-
-## Getting started
+## Getting Started
 
 ```bash
+git clone https://github.com/titanxlayer/zyva
+cd zyva-app
 npm install
-cp .env.example .env.local   # add your 0G Private Computer API key
+npx prisma generate
+cp .env.example .env.local   # add your 0G PC API key
 npm run dev                  # http://localhost:3000
 ```
 
 ### Environment
 
-See `.env.example`. Key variables:
-
 | Var | Purpose |
 |---|---|
-| `OG_PC_API_KEY` | 0G Private Computer API key — get from [pc.0g.ai](https://pc.0g.ai) |
-| `OG_PC_BASE_URL` | `https://pc.0g.ai/v1` (default) |
-| `OG_PC_MODEL` | default model (e.g. `minimax-m3`, `glm-5.1`, `qwen3.7-max`, `qwen3.6-plus`, `deepseek-v4-pro`) |
-| `DASHSCOPE_API_KEY` / `DASHSCOPE_BASE` | Qwen embeddings + rerank |
-| `ZYVA_EMBED_BACKEND` | `dashscope` \| `local` (Ollama) \| `gateway` |
-| `ZYVA_EMBED_MODEL` / `ZYVA_EMBED_DIMS` | embedding model + dimensions (default 1024) |
-| `ZYVA_VECTOR_STORE` | `local` (default) \| `qdrant` |
-| `QDRANT_URL` / `QDRANT_API_KEY` | Qdrant (team mode) |
-| `LANGFUSE_*` | optional observability |
-| `ZYVA_AUTORUN_COMMANDS` | allow auto-run of allowlisted commands |
+| `OG_PC_API_KEY` | 0G Private Computer — [pc.0g.ai](https://pc.0g.ai) |
+| `OG_PC_BASE_URL` | `https://pc.0g.ai/v1` |
+| `OG_PC_MODEL` | `minimax-m3` (default) |
+| `E2B_API_KEY` | E2B sandbox — [e2b.dev](https://e2b.dev) |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `NEXTAUTH_SECRET` | Random secret — `openssl rand -base64 32` |
+| `NEXTAUTH_URL` | `https://your-domain.com` |
+| `GOOGLE_CLIENT_ID/SECRET` | Google OAuth |
+| `GITHUB_CLIENT_ID/SECRET` | GitHub OAuth |
+| `DASHSCOPE_API_KEY` | Qwen embeddings + rerank |
+| `ZYVA_WORKSPACES_ROOT` | Per-user workspace root directory |
 
-### Optional services (server/team mode)
-
-```bash
-docker compose up -d        # Qdrant (6333) + Langfuse (3030)
-```
-
----
-
-## Project structure
-
-```
-src/
-  app/                 Next.js routes + API (chat, agent/run, agent/stream, index, terminal, traces, workspace)
-  components/          UI (editor, chat, live preview, swarm panel)
-  store/               Zustand state
-  engine/              ← the real runtime (original ZYVA code, white-label)
-    providers/         model provider abstraction (reasoning / embedding / rerank)
-    retrieval/         chunker, vector store (local + Qdrant), index + query
-    orchestrator/      runAgent + multi-agent graph + agent roles
-    patch/             SEARCH/REPLACE patch engine + snapshot/rollback
-    security/          command policy + containment
-    observability/     trace store (+ Langfuse forwarder)
-    tee/               honest TEE runtime state
-gateway/               standalone embedding gateway (server mode)
-landing/               static landing page
-```
-
----
-
-## Tests
+### Build desktop
 
 ```bash
-node --env-file=.env.local scripts/test-cerebras.mjs
-node scripts/test-preview-flow.mjs       # agent codes + live preview
-node scripts/test-swarm-stream.mjs       # multi-agent streaming to Swarm panel
+NEXT_STANDALONE=1 npm run build
+cd desktop && npm run dist
 ```
 
 ---
 
-## License & notices
+## Security Model
 
-White-label product. Third-party components (when adapted) retain their licenses — see `NOTICE`. Permissive (MIT/Apache-2.0) only; no GPL/AGPL embedded.
+- LLM **never** executes shell directly — all commands go through the policy layer
+- **allow** → auto-run safe commands (`npm install`, `tsc`, `eslint`)
+- **approve** → requires user confirmation (`rm`, `docker`, chaining)
+- **deny** → blocked (`rm -rf`, `sudo`, fork bombs)
+- Per-user workspace isolation — paths validated server-side
+- E2B sandboxes scoped per user session, torn down after task
+- 0G TEE attestation recorded for every inference request
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE)
+
+Third-party components retain their licenses. See [NOTICE](NOTICE).
