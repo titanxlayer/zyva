@@ -5,10 +5,20 @@ html, body {
   background-color: #1e1e1e;
   color: #cccccc;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  overflow: hidden;
   margin: 0;
+}
+
+/* IDE-specific: lock scroll so panels don't overflow */
+body.ide-layout {
+  overflow: hidden;
   height: 100vh;
   width: 100vw;
+}
+
+/* Docs and auth pages: normal scroll */
+body.page-layout {
+  overflow-y: auto;
+  min-height: 100vh;
 }
 
 .font-mono {

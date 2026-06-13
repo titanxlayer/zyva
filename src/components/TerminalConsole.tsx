@@ -11,6 +11,8 @@ export default function TerminalConsole() {
   const executeTerminalCommand = useIdeStore((state) => state.executeTerminalCommand);
   const activeConsoleTab = useIdeStore((state) => state.activeConsoleTab);
   const setActiveConsoleTab = useIdeStore((state) => state.setActiveConsoleTab);
+  const isTeeActive = useIdeStore((state) => state.isTeeActive);
+  const isCloudIde = useIdeStore((state) => state.isCloudIde);
 
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
@@ -51,8 +53,12 @@ export default function TerminalConsole() {
           ))}
         </div>
         <div className="flex items-center space-x-2 text-[11px] text-zinc-500">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-          <span>TEE Hardware Isolated</span>
+          {isCloudIde && (
+            <>
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+              <span>TEE Hardware Isolated</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -76,11 +82,13 @@ export default function TerminalConsole() {
             ))}
             <div ref={terminalEndRef} />
             
-            {/* Lingkungan TEE Enclave Tag */}
-            <div className="flex items-center text-[#61c554] pt-2 pb-1 select-none">
-              <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
-              <span>TEE Secure Sandbox Enclave (Intel SGX) Active</span>
-            </div>
+            {/* TEE Enclave badge — cloud only */}
+            {isCloudIde && (
+              <div className="flex items-center text-[#61c554] pt-2 pb-1 select-none">
+                <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
+                <span>TEE Secure Sandbox Enclave (0G TEE) Active</span>
+              </div>
+            )}
 
             {/* Baris Input Terminal */}
             <div className="flex mt-1">

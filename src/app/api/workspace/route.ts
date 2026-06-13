@@ -5,6 +5,8 @@ import os from 'os';
 import { exec } from 'child_process';
 import { writeFileSafe } from '@/engine/patch/patchEngine';
 import { indexFiles } from '@/engine/retrieval';
+import { requireAuth } from '@/lib/auth-guard';
+import { ensureUserWorkspace, assertInsideWorkspace, getUserProjectPath } from '@/lib/workspace-isolation';
 
 interface FileNode {
   name: string;
@@ -428,15 +430,26 @@ function normalizeParentPath(parentPath?: string): string {
 }
 
 export async function GET(req: NextRequest) {
+  const { userId, error } = await requireAuth();
+  if (error) return error;
+
   try {
     const { searchParams } = new URL(req.url);
     let workspacePath = searchParams.get('path');
 
+    // Default to user's own workspace root
     if (!workspacePath) {
-      workspacePath = process.cwd();
+      workspacePath = await ensureUserWorkspace(userId);
     }
 
     workspacePath = path.resolve(workspacePath);
+
+    // Enforce isolation — path must be inside user's workspace
+    try {
+      assertInsideWorkspace(userId, workspacePath);
+    } catch {
+      return NextResponse.json({ success: false, error: 'Access denied: path outside workspace' }, { status: 403 });
+    }
 
     if (!fs.existsSync(workspacePath)) {
       return NextResponse.json({ success: false, error: 'Path does not exist' }, { status: 404 });
@@ -460,6 +473,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const { userId, error: authError } = await requireAuth();
+  if (authError) return authError;
+
   try {
     const body = await req.json();
     const { action } = body;
@@ -565,34 +581,34 @@ if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         ? path.resolve(cleanFilePath)
         : path.resolve(projectPath, cleanFilePath);
 
-      // Containment (cross-platform): must stay inside the project.
-      const resolvedProjPath = path.resolve(projectPath);
-      if (absolutePath !== resolvedProjPath && !absolutePath.startsWith(resolvedProjPath + path.sep)) {
-        return NextResponse.json({ success: false, error: 'Access denied: Path lies outside boundary' }, { status: 403 });
+      // Enforce user workspace isolation
+      try {
+        assertInsideWorkspace(userId, absolutePath);
+      } catch {
+        return NextResponse.json({ success: false, error: 'Access denied: Path lies outside workspace boundary' }, { status: 403 });
       }
 
-      // Snapshot + atomic write (rollback support).
+      const resolvedProjPath = path.resolve(projectPath);
       const rel = path.relative(resolvedProjPath, absolutePath).replace(/\\/g, '/');
       const result = writeFileSafe(resolvedProjPath, rel, content);
       if (!result.ok) {
         return NextResponse.json({ success: false, error: result.error || 'write failed' }, { status: 500 });
       }
 
-      // Real incremental re-index of just this file (best-effort).
       try { await indexFiles(resolvedProjPath, { [rel]: content }); } catch { /* embedding optional */ }
 
       return NextResponse.json({ success: true, snapshotId: result.snapshotId });
     }
 
     if (action === 'createProject') {
-      const { parentPath, name, template } = body;
+      const { name, template } = body;
       if (!name || !template) {
         return NextResponse.json({ success: false, error: 'Missing fields' }, { status: 400 });
       }
 
-      const resolvedParent = normalizeParentPath(parentPath);
-      fs.mkdirSync(resolvedParent, { recursive: true });
-      const projectPath = path.join(resolvedParent, name);
+      // Always create inside user's isolated workspace
+      const userWorkspace = await ensureUserWorkspace(userId);
+      const projectPath = getUserProjectPath(userId, name);
       fs.mkdirSync(projectPath, { recursive: true });
 
       const templateData = TEMPLATE_FILES[template as 'react' | 'rust' | 'python'];
@@ -605,6 +621,22 @@ if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         const absoluteFilePath = path.join(projectPath, filename);
         fs.mkdirSync(path.dirname(absoluteFilePath), { recursive: true });
         fs.writeFileSync(absoluteFilePath, content, 'utf-8');
+      }
+
+      // Auto-inject guidance files (CLAUDE.md, AGENTS.md, DESIGN.md, README.md)
+      const guidanceDir = path.join(process.cwd(), 'templates');
+      const guidanceFiles = ['CLAUDE.md', 'AGENTS.md', 'DESIGN.md'];
+      for (const gf of guidanceFiles) {
+        const src = path.join(guidanceDir, gf);
+        const dest = path.join(projectPath, gf);
+        if (fs.existsSync(src) && !fs.existsSync(dest)) {
+          fs.copyFileSync(src, dest);
+        }
+      }
+      // Generate README.md
+      const readmePath = path.join(projectPath, 'README.md');
+      if (!fs.existsSync(readmePath)) {
+        fs.writeFileSync(readmePath, `# ${name}\n\nScaffolded with [ZYVA Cloud IDE](https://zyva.dev).\n\n**Stack:** Vite + React 19 + TypeScript + Tailwind CSS v4\n\n## Getting started\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n`, 'utf-8');
       }
 
       const fileTree = buildFileTree(projectPath, projectPath);

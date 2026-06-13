@@ -1,9 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Editor, { Monaco } from '@monaco-editor/react';
 import { useIdeStore } from '@/store/useIdeStore';
 import { Code2, FolderOpen, Plus, Zap, ChevronRight } from 'lucide-react';
+import { formatWithPrettier } from '@/lib/prettier-format';
+import { REACT_SNIPPETS } from '@/lib/snippets';
+import { THEME_FILE_MAP } from '@/lib/extensions-catalog';
 
 export default function MonacoCodeEditor() {
   const activeFile = useIdeStore((state) => state.activeFile);
@@ -11,6 +14,25 @@ export default function MonacoCodeEditor() {
   const projectPath = useIdeStore((state) => state.projectPath);
   const updateFileContent = useIdeStore((state) => state.updateFileContent);
   const setCreateProjectModalOpen = useIdeStore((state) => state.setCreateProjectModalOpen);
+  const setEditorPosition = useIdeStore((state) => state.setEditorPosition);
+  const setEditorDiagnostics = useIdeStore((state) => state.setEditorDiagnostics);
+  const installedExtensions = useIdeStore((state) => state.installedExtensions);
+  const activeTheme = useIdeStore((state) => state.activeTheme);
+
+  // Load and apply monaco-themes when activeTheme changes
+  useEffect(() => {
+    if (activeTheme === 'zyvaDarkTheme') return; // built-in, no load needed
+    const themeFile = THEME_FILE_MAP[activeTheme];
+    if (!themeFile) return;
+    import(`monaco-themes/themes/${themeFile}.json`).then((data) => {
+      import('@monaco-editor/react').then(({ loader }) => {
+        loader.init().then((monaco) => {
+          monaco.editor.defineTheme(activeTheme, data as any);
+          monaco.editor.setTheme(activeTheme);
+        });
+      });
+    }).catch(() => {});
+  }, [activeTheme]);
 
   // We need access to the setOpenFolderModal from page.tsx — we'll trigger via a custom event
   const handleOpenFolder = () => {
@@ -24,7 +46,7 @@ export default function MonacoCodeEditor() {
   };
 
   const handleEditorDidMount = (editor: any, monaco: Monaco) => {
-    // Custom theme configuration to match VS Code dark editor
+    // ── ZYVA dark theme ───────────────────────────────────────────────────
     monaco.editor.defineTheme('zyvaDarkTheme', {
       base: 'vs-dark',
       inherit: true,
@@ -46,7 +68,90 @@ export default function MonacoCodeEditor() {
         'editorLineNumber.activeForeground': '#c6c6c6',
       },
     });
-    monaco.editor.setTheme('zyvaDarkTheme');
+    monaco.editor.setTheme(activeTheme === 'zyvaDarkTheme' ? 'zyvaDarkTheme' : activeTheme);
+
+    // ── Real cursor position → status bar ────────────────────────────────
+    editor.onDidChangeCursorPosition((e: any) => {
+      setEditorPosition(e.position.lineNumber, e.position.column);
+    });
+
+    // ── Real diagnostics → status bar ────────────────────────────────────
+    const updateDiagnostics = () => {
+      const model = editor.getModel();
+      if (!model) return;
+      const markers = monaco.editor.getModelMarkers({ resource: model.uri });
+      const errors = markers.filter((m: any) => m.severity === monaco.MarkerSeverity.Error).length;
+      const warnings = markers.filter((m: any) => m.severity === monaco.MarkerSeverity.Warning).length;
+      setEditorDiagnostics(errors, warnings);
+    };
+    monaco.editor.onDidChangeMarkers(updateDiagnostics);
+    updateDiagnostics();
+
+    // ── Bracket pair colorization (built-in Monaco option) ─────────────
+    editor.updateOptions({ bracketPairColorization: { enabled: true } });
+
+    // ── Prettier: format document provider ───────────────────────────────
+    const prettierInstalled = installedExtensions.includes('prettier');
+    if (prettierInstalled) {
+      const langs = ['typescript', 'javascript', 'css', 'html', 'json', 'markdown'];
+      langs.forEach((lang) => {
+        monaco.languages.registerDocumentFormattingEditProvider(lang, {
+          async provideDocumentFormattingEdits(model: any) {
+            const filepath = model.uri.path || `file.${lang === 'typescript' ? 'tsx' : lang}`;
+            const formatted = await formatWithPrettier(model.getValue(), filepath);
+            return [{
+              range: model.getFullModelRange(),
+              text: formatted,
+            }];
+          },
+        });
+      });
+      // Format on save: Shift+Alt+F
+      editor.addCommand(
+        monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF,
+        async () => {
+          await editor.getAction('editor.action.formatDocument')?.run();
+        },
+      );
+    }
+
+    // ── React/TS Snippets ────────────────────────────────────────────────
+    const snippetsInstalled = installedExtensions.includes('react-snippets');
+    const snipsLangs = ['typescript', 'javascript', 'typescriptreact', 'javascriptreact'];
+    snipsLangs.forEach((lang) => {
+      monaco.languages.registerCompletionItemProvider(lang, {
+        provideCompletionItems(model: any, position: any) {
+          const word = model.getWordUntilPosition(position);
+          const range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn,
+          };
+          // Always show built-in snippets; show extra pack if installed
+          const snippets = snippetsInstalled ? REACT_SNIPPETS : REACT_SNIPPETS.slice(0, 8);
+          return {
+            suggestions: snippets.map((s) => ({
+              label: s.label,
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              documentation: s.documentation,
+              insertText: s.insertText,
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              range,
+            })),
+          };
+        },
+      });
+    });
+
+    // ── Emmet ────────────────────────────────────────────────────────────
+    if (installedExtensions.includes('emmet')) {
+      import('emmet-monaco-es').then((mod) => {
+        const emmetMonaco = mod.default ?? mod;
+        if (typeof emmetMonaco.emmetHTML === 'function') emmetMonaco.emmetHTML(monaco);
+        if (typeof emmetMonaco.emmetCSS === 'function') emmetMonaco.emmetCSS(monaco);
+      }).catch(() => {});
+    }
   };
 
   // No project open yet — show welcome screen

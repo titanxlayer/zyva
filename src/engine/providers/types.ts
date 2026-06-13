@@ -22,6 +22,7 @@ export interface GenerateOptions {
 export interface GenerateResult {
   text: string;
   reasoning?: string;
+  teeAttestation?: string;
   promptTokens?: number;
   completionTokens?: number;
   raw?: unknown;

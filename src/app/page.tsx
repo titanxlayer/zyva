@@ -7,6 +7,7 @@ import MonacoCodeEditor from '@/components/MonacoCodeEditor';
 import TerminalConsole from '@/components/TerminalConsole';
 import AgentSwarm from '@/components/AgentSwarm';
 import LivePreview from '@/components/LivePreview';
+import IdeBodyClass from '@/components/IdeBodyClass';
 import { 
   Search, Settings, Files, GitBranch, Box, LayoutTemplate,
   User, ChevronRight, X, RefreshCw, AlertCircle,
@@ -87,8 +88,10 @@ export default function Home() {
           setFolderPathInput(prev => prev || data.defaultProjectsDir);
         }
       } catch (e) {
-        // Non-fatal: user can still type a path manually
+        // Non-fatal
       }
+      // Check 0G storage status on load
+      if (!cancelled) store.checkStorageStatus();
     })();
     return () => { cancelled = true; };
   }, []);
@@ -138,13 +141,39 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [store]);
 
-  const handleTabClick = (tabName: string) => {
-    store.setActiveFile(tabName);
+  // Resize state for right panel (AgentSwarm)
+  const [showStorageHelper, setShowStorageHelper] = useState(false);
+  const [rightPanelWidth, setRightPanelWidth] = useState(360);
+  const isResizing = useRef(false);
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    const startX = e.clientX;
+    const startWidth = rightPanelWidth;
+
+    const onMove = (ev: MouseEvent) => {
+      if (!isResizing.current) return;
+      const delta = startX - ev.clientX; // dragging left = bigger panel
+      const newWidth = Math.min(700, Math.max(240, startWidth + delta));
+      setRightPanelWidth(newWidth);
+    };
+    const onUp = () => {
+      isResizing.current = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   };
 
   const handleCloseTab = (e: React.MouseEvent, tabName: string) => {
     e.stopPropagation();
     store.closeTab(tabName);
+  };
+
+  const handleTabClick = (tabName: string) => {
+    store.setActiveFile(tabName);
   };
 
   // Command Palette Actions list
@@ -167,6 +196,7 @@ export default function Home() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#1e1e1e] text-[#cccccc] font-sans overflow-hidden select-none relative">
+      <IdeBodyClass />
       
       {/* 1. TOP BAR */}
       <header className="h-[35px] flex items-center justify-between px-3 bg-[#181818] border-b border-[#2b2d31] shrink-0 z-20">
@@ -393,9 +423,62 @@ export default function Home() {
 
         {/* Right Info Status */}
         <div className="w-1/3 flex items-center justify-end space-x-4 select-none">
-          <div className="flex items-center space-x-1.5 bg-[#1e1e1e] border border-[#2b2d31] px-2 py-0.5 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-[#61c554] animate-pulse"></span>
-            <span className="text-[11px] text-[#cccccc]">0G Storage Live</span>
+          <div className="relative">
+            <div
+              className="flex items-center space-x-1.5 bg-[#1e1e1e] border border-[#2b2d31] px-2 py-0.5 rounded-full cursor-pointer hover:border-[#3b3d41]"
+              onClick={() => {
+                store.checkStorageStatus();
+                if (store.storageNodeOnline === false) setShowStorageHelper(v => !v);
+              }}
+              title={store.storageNodeOnline === false ? 'Click for help' : 'Click to recheck'}
+            >
+              <span className={`w-2 h-2 rounded-full ${store.storageNodeOnline === null ? 'bg-yellow-400 animate-pulse' : store.storageNodeOnline ? 'bg-[#61c554] animate-pulse' : 'bg-red-500'}`}></span>
+              <span className="text-[11px] text-[#cccccc]">
+                {store.storageNodeOnline === null ? '0G Checking…' : store.storageNodeOnline ? '0G Storage Live' : '0G Offline'}
+              </span>
+              {store.storageNodeOnline === false && (
+                <span className="text-[10px] text-red-400 ml-0.5">?</span>
+              )}
+            </div>
+
+            {/* Helper popup */}
+            {showStorageHelper && store.storageNodeOnline === false && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowStorageHelper(false)} />
+                <div className="absolute right-0 top-8 z-50 w-72 bg-[#1c1d26] border border-[#3b3d41] rounded-xl shadow-2xl p-4 text-left">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[12px] font-bold text-white">0G Storage Offline</span>
+                    <button onClick={() => setShowStorageHelper(false)} className="text-zinc-500 hover:text-white text-[14px] cursor-pointer">×</button>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 leading-relaxed mb-3">
+                    The 0G storage node at <code className="text-[#4ec9b0] bg-zinc-900 px-1 rounded">{store.storageNodeUrl}</code> is unreachable from your browser. This is normal — direct browser-to-node pings are blocked by CORS.
+                  </p>
+                  <div className="space-y-2 text-[11px]">
+                    <div className="bg-[#161720] border border-[#2b2d31] rounded-lg p-2.5">
+                      <div className="text-zinc-300 font-semibold mb-1">✅ What still works</div>
+                      <ul className="text-zinc-400 space-y-0.5 list-disc list-inside">
+                        <li>AI chat and code generation</li>
+                        <li>File editing and project management</li>
+                        <li>GitHub commit & push</li>
+                      </ul>
+                    </div>
+                    <div className="bg-[#161720] border border-[#2b2d31] rounded-lg p-2.5">
+                      <div className="text-zinc-300 font-semibold mb-1">🔧 To enable 0G Storage</div>
+                      <ul className="text-zinc-400 space-y-0.5 list-disc list-inside">
+                        <li>Connect a Web3 wallet in the Swarm panel</li>
+                        <li>Or update the node URL in Settings</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { store.checkStorageStatus(); }}
+                    className="mt-3 w-full text-[11px] py-1.5 bg-[#2b2d31] hover:bg-[#3b3d41] text-zinc-300 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Recheck connection
+                  </button>
+                </div>
+              </>
+            )}
           </div>
           <Settings 
             data-testid="settings-top-btn"
@@ -564,8 +647,15 @@ export default function Home() {
 
         </div>
 
-        {/* PANEL KANAN (AI Agents + AI Activity) */}
-        <AgentSwarm />
+        {/* PANEL KANAN (AI Agents + AI Activity) — resizable */}
+        {/* Drag handle */}
+        <div
+          onMouseDown={startResize}
+          className="w-1 bg-[#2b2d31] hover:bg-[#007acc] cursor-col-resize shrink-0 transition-colors active:bg-[#007acc]"
+          title="Drag to resize panel"
+          style={{ userSelect: 'none' }}
+        />
+        <AgentSwarm width={rightPanelWidth} />
       </div>
 
       {/* 3. STATUS BAR (Paling Bawah) */}
@@ -573,27 +663,28 @@ export default function Home() {
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-1 cursor-pointer hover:bg-white/20 px-1 rounded">
             <GitBranch className="w-3.5 h-3.5" />
-            <span>main*</span>
+            <span>{store.gitBranch}{store.gitChangedFiles.length > 0 ? '*' : ''}</span>
           </div>
           <div className="flex items-center space-x-1 cursor-pointer hover:bg-white/20 px-1 rounded">
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-3.5 h-3.5" onClick={() => store.checkStorageStatus()} />
           </div>
           <div className="flex items-center space-x-1 cursor-pointer hover:bg-white/20 px-1 rounded">
-            <X className="w-3 h-3" /> 0
-            <AlertCircle className="w-3 h-3 ml-1" /> 0
+            <X className="w-3 h-3" /> {store.editorErrors}
+            <AlertCircle className="w-3 h-3 ml-1" /> {store.editorWarnings}
           </div>
         </div>
 
         <div className="flex items-center space-x-4">
-          <span className="cursor-pointer hover:bg-white/20 px-1 rounded">Ln 23, Col 1</span>
+          <span className="cursor-pointer hover:bg-white/20 px-1 rounded">Ln {store.editorLn}, Col {store.editorCol}</span>
           <span className="cursor-pointer hover:bg-white/20 px-1 rounded">Spaces: 2</span>
           <span className="cursor-pointer hover:bg-white/20 px-1 rounded">UTF-8</span>
           <span className="cursor-pointer hover:bg-white/20 px-1 rounded">LF</span>
           <span className="flex items-center cursor-pointer hover:bg-white/20 px-1 rounded">
             <Code2 className="w-3.5 h-3.5 mr-1" /> TypeScript React
           </span>
-          <span className="flex items-center cursor-pointer hover:bg-white/20 px-1 rounded">
-            <Database className="w-3.5 h-3.5 mr-1" /> 0G Memory Synced
+          <span className="flex items-center cursor-pointer hover:bg-white/20 px-1 rounded" title={store.memoryIndexSynced ? '0G vector index synced' : 'Vector index not built yet'}>
+            <Database className="w-3.5 h-3.5 mr-1" />
+            {store.memoryIndexSynced ? '0G Memory Synced' : '0G Memory Pending'}
           </span>
         </div>
       </footer>

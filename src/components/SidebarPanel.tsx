@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useIdeStore } from '@/store/useIdeStore';
-import { 
+import {
   ChevronRight, ChevronDown, FileCode2, MoreHorizontal,
-  Search as SearchIcon, LayoutTemplate, Zap, Wallet
+  Search as SearchIcon, LayoutTemplate, Zap, Wallet, Check, Download, Trash2
 } from 'lucide-react';
+import { EXTENSIONS_CATALOG, THEME_FILE_MAP, type Extension } from '@/lib/extensions-catalog';
+import { getFileIcon, getFolderIcon } from '@/lib/file-icons';
 
 import { FileNode } from '@/store/useIdeStore';
 
@@ -13,20 +15,19 @@ function FileTreeItem({ node, depth, store }: { node: FileNode; depth: number; s
   const isFolder = node.type === 'folder';
   const isExpanded = !!store.expandedFolders[node.path];
   const isActive = store.activeFile === node.path;
+  const fileIconsEnabled = store.installedExtensions?.includes('file-icons');
 
-  // Make testId matching playwright spec
-  const testId = isFolder 
-    ? `folder-${node.name}` 
+  const testId = isFolder
+    ? `folder-${node.name}`
     : `file-${node.name.replace('.', '-')}`;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isFolder) {
-      store.toggleFolder(node.path);
-    } else {
-      store.setActiveFile(node.path);
-    }
+    if (isFolder) { store.toggleFolder(node.path); }
+    else { store.setActiveFile(node.path); }
   };
+
+  const fileIcon = !isFolder && fileIconsEnabled ? getFileIcon(node.name) : null;
 
   return (
     <div className="select-none">
@@ -35,25 +36,24 @@ function FileTreeItem({ node, depth, store }: { node: FileNode; depth: number; s
         onClick={handleClick}
         style={{ paddingLeft: `${depth * 12 + 12}px` }}
         className={`flex items-center py-1.5 pr-2 cursor-pointer text-[13px] transition-colors border-l-2 ${
-          isActive 
-            ? 'bg-[#37373d] text-white border-l-[#007acc]' 
+          isActive
+            ? 'bg-[#37373d] text-white border-l-[#007acc]'
             : 'hover:bg-[#2a2d2e] text-[#cccccc] border-l-transparent'
         }`}
       >
         {isFolder ? (
           <>
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4 mr-1 text-zinc-500 shrink-0" />
-            ) : (
-              <ChevronRight className="w-4 h-4 mr-1 text-zinc-500 shrink-0" />
-            )}
+            {isExpanded
+              ? <ChevronDown className="w-4 h-4 mr-1 text-zinc-500 shrink-0" />
+              : <ChevronRight className="w-4 h-4 mr-1 text-zinc-500 shrink-0" />}
+            <span className="mr-1 text-sm">{fileIconsEnabled ? getFolderIcon(node.name) : '📁'}</span>
             <span className="font-semibold text-slate-300 truncate">{node.name}</span>
           </>
         ) : (
           <>
-            <FileCode2 className={`w-3.5 h-3.5 mr-1.5 shrink-0 ${
-              isActive ? 'text-[#519aba]' : 'text-slate-500'
-            }`} />
+            {fileIcon
+              ? <span className="mr-1.5 text-[11px] font-bold shrink-0 w-5 text-center" style={{ color: fileIcon.color }}>{fileIcon.icon}</span>
+              : <FileCode2 className={`w-3.5 h-3.5 mr-1.5 shrink-0 ${isActive ? 'text-[#519aba]' : 'text-slate-500'}`} />}
             <span className="truncate">{node.name}</span>
           </>
         )}
@@ -77,10 +77,24 @@ export default function SidebarPanel() {
 
   const handleCommitSubmit = () => {
     if (commitMessage.trim()) {
+      store.gitCommitAndPush(commitMessage);
+      setCommitMessage('');
+    }
+  };
+
+  const handle0GCommit = () => {
+    if (commitMessage.trim()) {
       store.commitTo0G(commitMessage);
       setCommitMessage('');
     }
   };
+
+  // Refresh real git status when project opens or source-control tab is opened
+  useEffect(() => {
+    if (store.activeSidebarTab === 'source-control' && store.projectPath) {
+      store.refreshGitStatus();
+    }
+  }, [store.activeSidebarTab, store.projectPath]);
 
   return (
     <div className="w-[240px] bg-[#181818] border-r border-[#2b2d31] flex flex-col shrink-0">
@@ -240,59 +254,99 @@ export default function SidebarPanel() {
 
         {/* --- SOURCE CONTROL PANEL --- */}
         {store.activeSidebarTab === 'source-control' && (
-          <div className="p-4 space-y-4">
-              <div className="bg-[#3c3c3c] border border-[#3c3c3c] rounded focus-within:border-[#007acc] flex flex-col p-1">
-               <textarea 
-                 value={commitMessage}
-                 onChange={(e) => setCommitMessage(e.target.value)}
-                 placeholder="Commit message (Press Cmd+Enter)" 
-                 className="w-full h-16 bg-transparent text-[#cccccc] text-[13px] outline-none resize-none p-1" 
-               />
-             </div>
-             <button 
-               data-testid="commit-btn"
-               onClick={handleCommitSubmit}
-               className="w-full bg-[#007acc] hover:bg-[#005f9e] text-white text-[13px] py-1.5 rounded transition-colors font-medium cursor-pointer"
-             >
-               Commit to 0G
-             </button>
-             <div className="mt-6 select-none">
-                <div className="text-[11px] uppercase text-[#cccccc] font-semibold mb-2 flex items-center justify-between">
-                  <span>Changes</span>
-                  <span className="bg-[#4d4d4d] text-white rounded-full px-1.5 text-[10px]">1</span>
-                </div>
-                <div className="text-[13px] text-[#cccccc] flex justify-between items-center cursor-pointer hover:bg-[#2a2d2e] py-1 px-2 rounded">
-                  <span className="flex items-center">
-                    <span className="text-[#519aba] mr-2 text-xs font-bold">TS</span> dashboard.tsx
-                  </span>
-                  <span className="text-[#e2c08d] font-bold text-xs">M</span>
-                </div>
-             </div>
+          <div className="p-4 space-y-3">
+            {/* Commit message */}
+            <div className="bg-[#3c3c3c] border border-[#3c3c3c] rounded focus-within:border-[#007acc] flex flex-col p-1">
+              <textarea
+                value={commitMessage}
+                onChange={(e) => setCommitMessage(e.target.value)}
+                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleCommitSubmit(); }}
+                placeholder="Commit message (Ctrl+Enter)"
+                className="w-full h-16 bg-transparent text-[#cccccc] text-[13px] outline-none resize-none p-1"
+              />
+            </div>
+
+            {/* Two buttons stacked */}
+            <div className="flex flex-col gap-2">
+              <button
+                data-testid="commit-btn"
+                onClick={handle0GCommit}
+                disabled={!commitMessage.trim()}
+                className="w-full bg-[#2a2d2e] hover:bg-[#3c3c3c] border border-[#3c3c3c] text-[#cccccc] hover:text-white text-[13px] py-1.5 rounded transition-colors font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ⬡ Commit to 0G
+              </button>
+              <button
+                data-testid="github-push-btn"
+                onClick={handleCommitSubmit}
+                disabled={!commitMessage.trim() || store.gitPushing}
+                className="w-full bg-[#007acc] hover:bg-[#005f9e] text-white text-[13px] py-1.5 rounded transition-colors font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+              >
+                {store.gitPushing ? (
+                  <><svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="15 30"/></svg>Pushing…</>
+                ) : (
+                  <><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>Push to GitHub</>
+                )}
+              </button>
+            </div>
+
+            {/* Book icon → deploy guide */}
+            <a
+              href="/docs/deploy-vercel"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 mt-1 px-2 py-1.5 rounded hover:bg-[#2a2d2e] transition-colors group"
+              title="How to deploy to Vercel via GitHub"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+              </svg>
+              <span className="text-[12px] text-[#8a8f98] group-hover:text-[#a78bfa] transition-colors">
+                How to deploy with GitHub + Vercel
+              </span>
+            </a>
+
+            {/* GitHub repo link */}
+            {store.gitRepoUrl && (
+              <a href={store.gitRepoUrl} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-[11px] text-[#4ec9b0] hover:underline truncate px-2">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                {store.gitRepoUrl.replace('https://github.com/', '')}
+              </a>
+            )}
+
+            {/* Real changed files */}
+            <div className="mt-2 select-none">
+              <div className="text-[11px] uppercase text-[#cccccc] font-semibold mb-2 flex items-center justify-between">
+                <span>Changes</span>
+                <span className="bg-[#4d4d4d] text-white rounded-full px-1.5 text-[10px]">{store.gitChangedFiles.length}</span>
+              </div>
+              {store.gitChangedFiles.length === 0 && (
+                <div className="text-[12px] text-[#858585] px-2 py-1">{store.projectPath ? 'No changes' : 'No project open'}</div>
+              )}
+              {store.gitChangedFiles.map((f) => {
+                const ext = f.path.split('.').pop() || '';
+                const name = f.path.split('/').pop() || f.path;
+                const extColor = ext === 'ts' || ext === 'tsx' ? '#519aba' : ext === 'css' ? '#e37933' : '#cccccc';
+                const statusColor = f.status === 'M' ? '#e2c08d' : f.status === 'A' ? '#73c991' : f.status === 'D' ? '#f44747' : '#cccccc';
+                return (
+                  <div key={f.path} className="text-[13px] text-[#cccccc] flex justify-between items-center cursor-pointer hover:bg-[#2a2d2e] py-1 px-2 rounded" title={f.path}>
+                    <span className="flex items-center truncate">
+                      <span style={{ color: extColor }} className="mr-2 text-xs font-bold uppercase">{ext.slice(0, 2)}</span>
+                      <span className="truncate">{name}</span>
+                    </span>
+                    <span style={{ color: statusColor }} className="font-bold text-xs ml-2 shrink-0">{f.status}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
         {/* --- EXTENSIONS PANEL --- */}
         {store.activeSidebarTab === 'extensions' && (
-          <div className="p-4 space-y-4 select-none">
-             <div className="bg-[#3c3c3c] border border-[#3c3c3c] rounded focus-within:border-[#007acc] flex items-center px-2 py-1">
-                <input 
-                  type="text" 
-                  placeholder="Search Extensions..." 
-                  className="w-full bg-transparent text-[#cccccc] text-[13px] outline-none" 
-                />
-             </div>
-             <div className="space-y-4 mt-6">
-                <div className="flex space-x-3 cursor-pointer hover:bg-[#2a2d2e] p-2 rounded">
-                   <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-cyan-500 rounded flex items-center justify-center shrink-0">
-                     <Zap className="w-6 h-6 text-white" />
-                   </div>
-                   <div className="flex flex-col justify-center">
-                      <div className="text-[#cccccc] text-[13px] font-semibold text-white">ZYVA 0G Bridge</div>
-                      <div className="text-[#858585] text-[11px]">IDE Integration to 0G Storage</div>
-                   </div>
-                </div>
-             </div>
-          </div>
+          <ExtensionsPanel store={store} />
         )}
 
         {/* --- LAYOUT / ZYVA HUB PANEL --- */}
@@ -303,11 +357,11 @@ export default function SidebarPanel() {
                <div className="bg-[#2a2d2e] p-3 rounded border border-[#3c3c3c]">
                   <div className="flex items-center justify-between text-[13px] mb-2">
                     <span className="text-[#cccccc]">Active Swarm</span>
-                    <span className="text-[#4ec9b0] font-semibold">4 Agents</span>
+                    <span className="text-[#4ec9b0] font-semibold">{store.swarmAgents.filter(a => a.status === 'working').length || store.swarmAgents.length} Agents</span>
                   </div>
                   <div className="flex items-center justify-between text-[13px]">
                     <span className="text-[#cccccc]">Total Tokens</span>
-                    <span className="text-[#c586c0] font-mono">14.2K</span>
+                    <span className="text-[#c586c0] font-mono">{store.totalTokensUsed > 0 ? (store.totalTokensUsed > 1000 ? `${(store.totalTokensUsed / 1000).toFixed(1)}K` : store.totalTokensUsed) : '—'}</span>
                   </div>
                </div>
              </div>
@@ -371,19 +425,12 @@ export default function SidebarPanel() {
                     onChange={(e) => store.updateSettings('aiModel', e.target.value)}
                     className="w-full bg-[#3c3c3c] border border-[#3c3c3c] rounded text-[#cccccc] text-[13px] p-1.5 outline-none focus:border-[#007acc] cursor-pointer"
                   >
-                    <optgroup label="★ Gratis (0G Inference)">
-                      <option value="glm-5.1">GLM-5.1 (744B)</option>
-                      <option value="glm-5">GLM-5 (744B)</option>
-                      <option value="glm-4.7">GLM-4.7</option>
-                    </optgroup>
-                    <optgroup label="0G Router (perlu key)">
-                      <option value="0GM-1.0-35B-A3B">0GM-1.0-35B ★ 0G Native</option>
-                      <option value="deepseek-v4-pro">DeepSeek-V4-Pro (1M ctx)</option>
-                      <option value="deepseek/deepseek-chat-v3-0324">DeepSeek-V3 (131K ctx)</option>
-                      <option value="qwen3.7-max">Qwen3.7-Max (1M ctx)</option>
-                      <option value="qwen3.6-plus">Qwen3.6-Plus (1M ctx)</option>
-                      <option value="zai-org/GLM-5.1-FP8">GLM-5.1-FP8 (0G Infra)</option>
-                      <option value="zai-org/GLM-5-FP8">GLM-5-FP8 (0G Infra)</option>
+                    <optgroup label="0G Private Computer (pc.0g.ai)">
+                      <option value="minimax-m3">MiniMax-M3 · 1M ctx</option>
+                      <option value="glm-5.1">GLM-5.1 · 207K ctx</option>
+                      <option value="qwen3.7-max">Qwen3.7-Max · 1M ctx</option>
+                      <option value="qwen3.6-plus">Qwen3.6-Plus · 1M ctx</option>
+                      <option value="deepseek-v4-pro">DeepSeek-V4-Pro · 1M ctx</option>
                     </optgroup>
                   </select>
                 </div>
@@ -453,6 +500,167 @@ export default function SidebarPanel() {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Extensions Panel ───────────────────────────────────────────────────────────
+
+const CATEGORY_LABELS: Record<string, string> = {
+  formatter: 'Formatters',
+  productivity: 'Productivity',
+  theme: 'Themes',
+  linting: 'Linting',
+  language: 'Language Support',
+};
+
+function ExtensionsPanel({ store }: { store: any }) {
+  const [query, setQuery] = useState('');
+  const [installing, setInstalling] = useState<string | null>(null);
+
+  const installed: string[] = store.installedExtensions || [];
+  const activeTheme: string = store.activeTheme || 'zyvaDarkTheme';
+
+  const filtered = EXTENSIONS_CATALOG.filter((e) =>
+    !query || e.name.toLowerCase().includes(query.toLowerCase()) || e.description.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const grouped = filtered.reduce<Record<string, Extension[]>>((acc, ext) => {
+    const key = CATEGORY_LABELS[ext.category] || ext.category;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(ext);
+    return acc;
+  }, {});
+
+  async function handleInstall(ext: Extension) {
+    setInstalling(ext.id);
+    await new Promise((r) => setTimeout(r, 600)); // simulate install
+    store.installExtension(ext.id);
+    setInstalling(null);
+  }
+
+  function handleUninstall(ext: Extension) {
+    if (ext.builtin) return;
+    store.uninstallExtension(ext.id);
+    // If uninstalling active theme, revert to default
+    if (ext.id === activeTheme) store.setTheme('zyvaDarkTheme');
+  }
+
+  function handleActivateTheme(ext: Extension) {
+    store.setTheme(ext.id);
+  }
+
+  const isInstalled = (id: string) => installed.includes(id);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Search */}
+      <div className="px-3 pt-3 pb-2 sticky top-0 bg-[#181818] z-10">
+        <div className="bg-[#3c3c3c] border border-[#3c3c3c] rounded focus-within:border-[#007acc] flex items-center px-2 py-1">
+          <SearchIcon className="w-3.5 h-3.5 text-[#858585] mr-2 shrink-0" />
+          <input
+            data-testid="extension-search"
+            type="text"
+            placeholder="Search extensions..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full bg-transparent text-[#cccccc] text-[13px] outline-none"
+          />
+        </div>
+        <div className="text-[10px] text-[#555] mt-1.5 px-1">{filtered.length} extensions</div>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-4">
+        {Object.entries(grouped).map(([category, exts]) => (
+          <div key={category}>
+            <div className="text-[10px] uppercase font-bold text-[#555] tracking-wider px-2 py-1">{category}</div>
+            {exts.map((ext) => {
+              const inst = isInstalled(ext.id);
+              const isTheme = ext.category === 'theme';
+              const isActive = isTheme && activeTheme === ext.id;
+              const isLoading = installing === ext.id;
+
+              return (
+                <div
+                  key={ext.id}
+                  data-testid={`extension-${ext.id}`}
+                  className="flex items-start gap-2.5 p-2 rounded hover:bg-[#2a2d2e] group transition-colors"
+                >
+                  {/* Icon */}
+                  <div
+                    className="w-9 h-9 rounded-lg flex items-center justify-center text-base shrink-0 font-bold"
+                    style={{ background: ext.iconBg, color: '#fff' }}
+                  >
+                    {ext.icon}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[13px] font-semibold text-[#e8e8ea] truncate">{ext.name}</span>
+                      {isActive && (
+                        <span className="text-[9px] bg-[#007acc22] border border-[#007acc44] text-[#007acc] px-1 rounded font-bold shrink-0">ACTIVE</span>
+                      )}
+                      {inst && !isTheme && (
+                        <Check className="w-3 h-3 text-[#4ec9b0] shrink-0" />
+                      )}
+                    </div>
+                    <div className="text-[11px] text-[#858585] leading-relaxed line-clamp-2 mt-0.5">{ext.description}</div>
+                    <div className="text-[10px] text-[#555] mt-0.5">{ext.author} · v{ext.version}</div>
+                  </div>
+
+                  {/* Action */}
+                  <div className="shrink-0 flex flex-col gap-1">
+                    {isTheme ? (
+                      <>
+                        {!inst ? (
+                          <button
+                            onClick={() => handleInstall(ext)}
+                            disabled={!!isLoading}
+                            className="text-[10px] px-2 py-1 bg-[#007acc] hover:bg-[#005f9e] text-white rounded transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                          >
+                            {isLoading ? <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="15 30"/></svg> : <Download className="w-3 h-3" />}
+                          </button>
+                        ) : isActive ? (
+                          <span className="text-[10px] text-[#007acc] px-1">✓</span>
+                        ) : (
+                          <button
+                            onClick={() => handleActivateTheme(ext)}
+                            className="text-[10px] px-2 py-1 bg-[#2a2d2e] hover:bg-[#3c3c3c] text-[#cccccc] rounded transition-colors cursor-pointer"
+                          >
+                            Apply
+                          </button>
+                        )}
+                      </>
+                    ) : inst ? (
+                      !ext.builtin && (
+                        <button
+                          onClick={() => handleUninstall(ext)}
+                          className="opacity-0 group-hover:opacity-100 text-[10px] px-2 py-1 bg-[#2a2d2e] hover:bg-red-900/30 text-[#858585] hover:text-red-400 rounded transition-all cursor-pointer"
+                          title="Uninstall"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )
+                    ) : (
+                      <button
+                        onClick={() => handleInstall(ext)}
+                        disabled={!!isLoading}
+                        className="text-[10px] px-2 py-1 bg-[#007acc] hover:bg-[#005f9e] text-white rounded transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                      >
+                        {isLoading
+                          ? <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="15 30"/></svg>
+                          : <><Download className="w-3 h-3" /></>}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </div>
   );

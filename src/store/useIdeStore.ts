@@ -82,6 +82,31 @@ export interface IdeState {
   walletBalance: number;
   walletError: string;
 
+  // Git (real)
+  gitBranch: string;
+  gitChangedFiles: { path: string; status: string }[];
+  gitPushing: boolean;
+  gitRepoUrl: string;
+
+  // Extensions
+  installedExtensions: string[];
+  activeTheme: string;
+  installExtension: (id: string) => void;
+  uninstallExtension: (id: string) => void;
+  setTheme: (theme: string) => void;
+
+  // Real-time status
+  storageNodeOnline: boolean | null;   // null = checking
+  memoryIndexSynced: boolean;
+  isTeeActive: boolean;
+  isCloudIde: boolean;
+  editorLn: number;
+  editorCol: number;
+  editorErrors: number;
+  editorWarnings: number;
+  totalTokensUsed: number;
+  activeAgentCount: number;
+
   // Terminal Logs
   terminalLogs: string[];
   terminalInput: string;
@@ -134,6 +159,12 @@ export interface IdeState {
   connectMetaMask: () => Promise<void>;
   disconnectWallet: () => void;
   commitTo0G: (message: string) => void;
+  gitCommitAndPush: (message: string) => Promise<void>;
+  refreshGitStatus: () => Promise<void>;
+  checkStorageStatus: () => Promise<void>;
+  setEditorPosition: (ln: number, col: number) => void;
+  setEditorDiagnostics: (errors: number, warnings: number) => void;
+  addTokenUsage: (tokens: number) => void;
   updateSettings: (key: string, value: any) => void;
   collapseAllFolders: () => void;
 
@@ -513,6 +544,24 @@ export const useIdeStore = create<IdeState>((set, get) => ({
   walletBalance: 0,
   walletError: '',
 
+  gitBranch: 'main',
+  gitChangedFiles: [],
+  gitPushing: false,
+  gitRepoUrl: '',
+
+  installedExtensions: ['prettier', 'emmet', 'file-icons', 'bracket-colorizer'],
+  activeTheme: 'zyvaDarkTheme',
+
+  storageNodeOnline: null,  memoryIndexSynced: false,
+  isTeeActive: typeof window !== 'undefined' && window.location?.hostname !== 'localhost',
+  isCloudIde: typeof window !== 'undefined' && window.location?.hostname !== 'localhost',
+  editorLn: 1,
+  editorCol: 1,
+  editorErrors: 0,
+  editorWarnings: 0,
+  totalTokensUsed: 0,
+  activeAgentCount: 0,
+
   terminalLogs: [
     '$ npm run dev',
     '> zyva-app@1.0.0 dev',
@@ -553,7 +602,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
   isCommandPaletteOpen: false,
   isWalletModalOpen: false,
 
-  aiModel: 'glm-5.1',
+  aiModel: 'minimax-m3',
   aiModelNetwork: 'mainnet',
   storageNodeUrl: 'https://mainnet.0g.ai',
   autoSync: true,
@@ -860,10 +909,86 @@ export const useIdeStore = create<IdeState>((set, get) => ({
     }, 2500);
   },
 
+  refreshGitStatus: async () => {
+    const projectPath = get().projectPath;
+    if (!projectPath) return;
+    try {
+      const res = await fetch('/api/git', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'status', projectPath }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        set({ gitBranch: data.branch || 'main', gitChangedFiles: data.files || [] });
+      }
+    } catch { /* non-fatal */ }
+  },
+
+  gitCommitAndPush: async (message) => {
+    const projectPath = get().projectPath;
+    if (!projectPath) {
+      set({ terminalLogs: [...get().terminalLogs, '✗ No project open — cannot commit'] });
+      return;
+    }
+    set({ gitPushing: true });
+    set({ terminalLogs: [...get().terminalLogs, `$ git commit -m "${message}" && git push`] });
+    try {
+      const res = await fetch('/api/git', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'commitAndPush', projectPath, message }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const logs = [`✓ Committed and pushed to ${data.repo || 'GitHub'}`];
+        if (data.repoUrl) logs.push(`  ${data.repoUrl}`);
+        set({
+          terminalLogs: [...get().terminalLogs, ...logs],
+          gitRepoUrl: data.repoUrl || '',
+        });
+        await get().refreshGitStatus();
+      } else {
+        set({ terminalLogs: [...get().terminalLogs, `✗ ${data.error || 'git push failed'}`] });
+      }
+    } catch (e: any) {
+      set({ terminalLogs: [...get().terminalLogs, `✗ ${e.message}`] });
+    } finally {
+      set({ gitPushing: false });
+    }
+  },
+
+  checkStorageStatus: async () => {
+    const nodeUrl = get().storageNodeUrl;
+    try {
+      const res = await fetch(`${nodeUrl}/`, { method: 'HEAD', signal: AbortSignal.timeout(5000) }).catch(() => null);
+      const online = res !== null && (res.ok || res.status < 500);
+      set({ storageNodeOnline: online });
+      if (get().projectPath) {
+        const idxRes = await fetch('/api/index?path=' + encodeURIComponent(get().projectPath || '')).catch(() => null);
+        set({ memoryIndexSynced: idxRes?.ok === true });
+      }
+    } catch {
+      set({ storageNodeOnline: false });
+    }
+  },
+
+  setEditorPosition: (ln, col) => set({ editorLn: ln, editorCol: col }),
+  setEditorDiagnostics: (errors, warnings) => set({ editorErrors: errors, editorWarnings: warnings }),
+  addTokenUsage: (tokens) => set((s) => ({ totalTokensUsed: s.totalTokensUsed + tokens })),
+
+  installExtension: (id) => set((s) => ({
+    installedExtensions: s.installedExtensions.includes(id)
+      ? s.installedExtensions
+      : [...s.installedExtensions, id],
+  })),
+  uninstallExtension: (id) => set((s) => ({
+    installedExtensions: s.installedExtensions.filter((e) => e !== id),
+  })),
+  setTheme: (theme) => set({ activeTheme: theme }),
+
   sendChatMessage: async (text) => {
     if (!text.trim()) return;
-
-    // Multi-agent streaming path — drives the Swarm panel live via SSE.
     if (get().multiAgentMode) {
       await get().sendChatMessageStreaming(text);
       return;
@@ -1196,6 +1321,10 @@ export const useIdeStore = create<IdeState>((set, get) => ({
         actions: actions.length > 0 ? actions : undefined,
       };
       set((state) => ({ chatMessages: [...state.chatMessages, agentMsg], isAgentThinking: false }));
+
+      // Estimate token usage (rough: ~4 chars per token)
+      const estimatedTokens = Math.round((text.length + finalReply.length) / 4);
+      get().addTokenUsage(estimatedTokens);
 
       if (get().autonomousMode && actions.length > 0) {
         for (const action of actions) {

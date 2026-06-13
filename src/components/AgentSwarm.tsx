@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { useIdeStore } from '@/store/useIdeStore';
 import {
   BrainCircuit, Code2, Database, Zap, LayoutTemplate,
@@ -54,13 +55,16 @@ const getAgentBg = (name: string) => {
 };
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export default function AgentSwarm() {
+export default function AgentSwarm({ width = 360 }: { width?: number }) {
+  const { data: session } = useSession();
   const swarmAgents          = useIdeStore(s => s.swarmAgents);
   const activityFeed         = useIdeStore(s => s.activityFeed);
   const chatMessages         = useIdeStore(s => s.chatMessages);
   const sendChatMessage      = useIdeStore(s => s.sendChatMessage);
   const isAgentThinking      = useIdeStore(s => s.isAgentThinking);
   const isWalletConnected    = useIdeStore(s => s.isWalletConnected);
+  // Authenticated = logged in via Google/GitHub OAuth OR wallet — either unlocks chat
+  const isAuthenticated      = !!session?.user || isWalletConnected;
   const walletBalance        = useIdeStore(s => s.walletBalance);
   const aiModelNetwork       = useIdeStore(s => s.aiModelNetwork);
   const aiModel              = useIdeStore(s => s.aiModel);
@@ -109,7 +113,7 @@ export default function AgentSwarm() {
   // ... (ModelSelector inlined below)
 
   return (
-    <div className="w-[340px] bg-[#181818] border-l border-[#2b2d31] flex flex-col shrink-0 h-full">
+    <div className="bg-[#181818] border-l border-[#2b2d31] flex flex-col shrink-0 h-full overflow-hidden" style={{ width: `${width}px`, minWidth: 240, maxWidth: 700 }}>
       {/* Tab Switcher */}
       <div className="flex border-b border-[#2b2d31] h-[35px] bg-[#151515] shrink-0 select-none">
         <button data-testid="right-panel-swarm-tab" onClick={() => setActiveTab('swarm')}
@@ -187,136 +191,16 @@ export default function AgentSwarm() {
         {/* ── CHAT TAB ── */}
         {activeTab === 'chat' && (
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            {!isWalletConnected ? (
-              // ── Gate UI ──
-              <div className="flex-1 flex flex-col justify-between overflow-y-auto min-h-0">
-                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                  <div className="relative mb-5 shrink-0">
-                    <div className="absolute inset-0 bg-gradient-to-tr from-[#007acc] to-[#4ec9b0] rounded-full blur-xl opacity-20 animate-pulse" />
-                    <div className="relative w-14 h-14 rounded-2xl bg-[#252526] border border-zinc-800/80 flex items-center justify-center shadow-lg">
-                      <Wallet className="w-7 h-7 text-[#4ec9b0]" />
-                      <Shield className="absolute -top-1 -right-1 w-3.5 h-3.5 text-[#007acc] fill-current bg-zinc-950 rounded-full" />
-                    </div>
-                  </div>
-                  <h3 data-testid="chat-gate-title" className="text-[12px] font-bold text-white mb-1 tracking-wider uppercase">Wallet Connection Required</h3>
-                  <p className="text-[10px] text-zinc-400 max-w-[240px] leading-relaxed mb-5">
-                    Accessing the AI Agent swarm requires a wallet connection to authenticate on the 0G Network.
-                  </p>
-                  <div className="w-full max-w-[265px] bg-[#1e1e1e]/60 border border-zinc-800/60 rounded-xl p-3 text-left space-y-2 mb-3.5">
-                    <div className="flex items-center space-x-1.5 text-zinc-300 font-semibold text-[10px]">
-                      <div className="w-4 h-4 rounded bg-[#007acc]/15 flex items-center justify-center text-[#007acc] font-mono text-[9px]">1</div>
-                      <span>Web3 Wallet Connection</span>
-                    </div>
-                    <p className="text-[9.5px] text-zinc-500 leading-normal">
-                      Connect your MetaMask wallet (0G Mainnet) or auto-detect a local private key file.
-                    </p>
-                    <div className="pt-1 space-y-1.5">
-                      <button data-testid="gate-connect-wallet-btn" onClick={connectWallet}
-                        className="w-full py-1.5 rounded-lg bg-[#007acc] hover:bg-[#005f9e] text-white text-[10px] font-semibold transition-all flex items-center justify-center space-x-1 cursor-pointer">
-                        <Wallet className="w-3 h-3" /><span>Connect Web3 Wallet</span>
-                      </button>
-                      <button data-testid="gate-connect-fallback-btn" onClick={async () => await connectWalletFallback()}
-                        className="w-full py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[9.5px] font-semibold border border-zinc-700/60 transition-all flex items-center justify-center space-x-1 cursor-pointer">
-                        <span>Detect Local Key File</span>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="w-full max-w-[265px] bg-[#1e1e1e]/60 border border-zinc-800/60 rounded-xl p-3 text-left space-y-1.5">
-                    <div className="flex items-center space-x-1.5 text-zinc-300 font-semibold text-[10px]">
-                      <div className="w-4 h-4 rounded bg-[#4ec9b0]/15 flex items-center justify-center text-[#4ec9b0] font-mono text-[9px]">2</div>
-                      <span>Manual Workspace Scaffolding</span>
-                    </div>
-                    <p className="text-[9.5px] text-zinc-500 leading-normal">Prefer manual coding? You can scaffold projects via the top menu:</p>
-                    <div className="text-[9.5px] font-mono text-zinc-400 bg-zinc-950/40 p-2 rounded border border-zinc-800/40 flex flex-col space-y-0.5">
-                      <div>• Go to <span className="text-[#569cd6]">File</span> &gt; <span className="text-[#4ec9b0]">Create Project...</span></div>
-                      <div>• Go to <span className="text-[#569cd6]">File</span> &gt; <span className="text-[#4ec9b0]">Open Folder...</span></div>
-                    </div>
-                  </div>
+            {!isAuthenticated ? (
+              // ── Gate: not signed in ──
+              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                <div className="w-12 h-12 rounded-xl bg-[#252526] border border-zinc-800 flex items-center justify-center mb-4">
+                  <Shield className="w-6 h-6 text-[#007acc]" />
                 </div>
-                <div className="shrink-0 px-3 pt-2 pb-3 border-t border-[#2b2d31]">
-                  <div className="bg-[#1e1e1e] border border-[#2b2d31] rounded-xl p-2.5 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-1.5">
-                        <span className="text-[10px] text-zinc-500 font-medium">Model:</span>
-                        <select
-                          data-testid="agent-model-select"
-                          value={aiModel}
-                          onChange={e => updateSettings('aiModel', e.target.value)}
-                          className="bg-[#2a2d2e] border border-zinc-700/60 text-zinc-300 rounded text-[10px] px-1.5 py-0.5 outline-none cursor-pointer max-w-[200px]"
-                        >
-                          <optgroup label="★ Gratis (0G Inference)">
-                            <option value="glm-5.1">GLM-5.1 (744B)</option>
-                            <option value="glm-5">GLM-5 (744B)</option>
-                            <option value="glm-4.7">GLM-4.7</option>
-                          </optgroup>
-                          <optgroup label="0G Router (perlu key)">
-                            <option value="0GM-1.0-35B-A3B">0GM-1.0-35B ★ 0G Native</option>
-                            <option value="deepseek-v4-pro">DeepSeek-V4-Pro (1M ctx)</option>
-                            <option value="deepseek/deepseek-chat-v3-0324">DeepSeek-V3 (131K ctx)</option>
-                            <option value="qwen3.7-max">Qwen3.7-Max (1M ctx)</option>
-                            <option value="qwen3.6-plus">Qwen3.6-Plus (1M ctx)</option>
-                            <option value="zai-org/GLM-5.1-FP8">GLM-5.1-FP8 (0G Infra)</option>
-                            <option value="zai-org/GLM-5-FP8">GLM-5-FP8 (0G Infra)</option>
-                          </optgroup>
-                        </select>
-                      </div>
-                      <div className="flex items-center space-x-1 bg-[#007acc]/10 border border-[#007acc]/30 rounded-lg px-2 py-0.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#4ec9b0] animate-pulse" />
-                        <span className="text-[9px] font-bold text-[#4ec9b0]">Mainnet</span>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-zinc-800/60 pt-2 space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <div className="flex items-center space-x-1.5">
-                          <span className="text-zinc-500">0G Network:</span>
-                          {isWalletConnected ? (
-                            <span className="flex items-center space-x-1 text-emerald-400 font-semibold">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              <span>Connected via Wallet</span>
-                            </span>
-                          ) : (
-                            <span className="text-zinc-600 italic">Connect wallet to unlock AI</span>
-                          )}
-                        </div>
-                        {!isWalletConnected && (
-                          <button type="button" onClick={() => connectWallet()}
-                            className="text-[#007acc] hover:text-sky-300 font-semibold underline underline-offset-2 cursor-pointer transition-colors text-[10px]">
-                            Connect
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-1.5">
-                          <Key className="w-2.5 h-2.5 text-zinc-600" />
-                          <span className="text-[9px] text-zinc-600">0G Router Key (optional):</span>
-                          {ogApiKey && <span className="text-[9px] text-emerald-500">✓ saved</span>}
-                        </div>
-                        <div className="flex items-center space-x-1.5">
-                          <div className="relative flex-1">
-                            <input
-                              type={showKey ? 'text' : 'password'}
-                              value={keyInputVal}
-                              onChange={e => setKeyInputVal(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && handleSaveKey()}
-                              placeholder="0G API Key (optional)..."
-                              className="w-full bg-[#141414] border border-zinc-700/40 rounded-lg text-zinc-400 text-[10px] px-2.5 py-1.5 outline-none focus:border-[#007acc]/50 font-mono pr-7 placeholder:text-zinc-600"
-                            />
-                            <button type="button" onClick={() => setShowKey(!showKey)}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-700 hover:text-zinc-500 cursor-pointer">
-                              {showKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                            </button>
-                          </div>
-                          <button type="button" onClick={handleSaveKey}
-                            className={`px-2.5 py-1.5 rounded-lg text-[9px] font-semibold transition-all cursor-pointer shrink-0 ${keySaved ? 'bg-emerald-600 text-white' : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'}`}>
-                            {keySaved ? 'Saved' : 'Save'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <h3 className="text-[12px] font-bold text-white mb-2 uppercase tracking-wider">Sign in required</h3>
+                <p className="text-[10px] text-zinc-400 max-w-[220px] leading-relaxed">
+                  Sign in with Google or GitHub to use the AI chat. Wallet connection is optional and unlocks 0G on-chain features.
+                </p>
               </div>
             ) : (
               <>
@@ -392,19 +276,12 @@ export default function AgentSwarm() {
                           onChange={e => updateSettings('aiModel', e.target.value)}
                           className="bg-[#2a2d2e] border border-zinc-700/60 text-zinc-300 rounded text-[10px] px-1.5 py-0.5 outline-none cursor-pointer max-w-[200px]"
                         >
-                          <optgroup label="★ Gratis (0G Inference)">
-                            <option value="glm-5.1">GLM-5.1 (744B)</option>
-                            <option value="glm-5">GLM-5 (744B)</option>
-                            <option value="glm-4.7">GLM-4.7</option>
-                          </optgroup>
-                          <optgroup label="0G Router (perlu key)">
-                            <option value="0GM-1.0-35B-A3B">0GM-1.0-35B ★ 0G Native</option>
-                            <option value="deepseek-v4-pro">DeepSeek-V4-Pro (1M ctx)</option>
-                            <option value="deepseek/deepseek-chat-v3-0324">DeepSeek-V3 (131K ctx)</option>
-                            <option value="qwen3.7-max">Qwen3.7-Max (1M ctx)</option>
-                            <option value="qwen3.6-plus">Qwen3.6-Plus (1M ctx)</option>
-                            <option value="zai-org/GLM-5.1-FP8">GLM-5.1-FP8 (0G Infra)</option>
-                            <option value="zai-org/GLM-5-FP8">GLM-5-FP8 (0G Infra)</option>
+                          <optgroup label="0G Private Computer (pc.0g.ai)">
+                            <option value="minimax-m3">MiniMax-M3 · 1M ctx</option>
+                            <option value="glm-5.1">GLM-5.1 · 207K ctx</option>
+                            <option value="qwen3.7-max">Qwen3.7-Max · 1M ctx</option>
+                            <option value="qwen3.6-plus">Qwen3.6-Plus · 1M ctx</option>
+                            <option value="deepseek-v4-pro">DeepSeek-V4-Pro · 1M ctx</option>
                           </optgroup>
                         </select>
                       </div>
@@ -421,10 +298,10 @@ export default function AgentSwarm() {
                           {isWalletConnected ? (
                             <span className="flex items-center space-x-1 text-emerald-400 font-semibold">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              <span>Connected via Wallet</span>
+                              <span>Wallet connected</span>
                             </span>
                           ) : (
-                            <span className="text-zinc-600 italic">Connect wallet to unlock AI</span>
+                            <span className="text-zinc-600 italic">Optional — for 0G commits</span>
                           )}
                         </div>
                         {!isWalletConnected && (

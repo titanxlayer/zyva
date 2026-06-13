@@ -5,6 +5,8 @@
 
 export interface ZyvaConfig {
   cerebrasApiKey: string;
+  ogpc: { apiKey: string; baseUrl: string; model: string };
+  e2b: { apiKey: string };
   dashscope: { apiKey: string; base: string };
   embed: { model: string; dims: number; backend: 'dashscope' | 'local' | 'gateway' };
   ollama: { base: string; model: string };
@@ -21,6 +23,14 @@ export function getConfig(): ZyvaConfig {
   const env = process.env;
   return {
     cerebrasApiKey: env.CEREBRAS_API_KEY || '',
+    ogpc: {
+      apiKey: env.OG_PC_API_KEY || '',
+      baseUrl: env.OG_PC_BASE_URL || 'https://pc.0g.ai/v1',
+      model: env.OG_PC_MODEL || 'minimax-m3',
+    },
+    e2b: {
+      apiKey: env.E2B_API_KEY || '',
+    },
     dashscope: {
       apiKey: env.DASHSCOPE_API_KEY || '',
       base: env.DASHSCOPE_BASE || 'https://dashscope-intl.aliyuncs.com',

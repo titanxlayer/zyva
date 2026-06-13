@@ -99,3 +99,24 @@ export function listTraces(limit = 50): TraceRecord[] {
     return [];
   }
 }
+
+/** Lightweight fire-and-forget trace for non-agent events (sandbox, auth, etc.) */
+export function addTrace(data: {
+  type: string;
+  command?: string;
+  success?: boolean;
+  exitCode?: number;
+  durationMs?: number;
+  model?: string;
+  error?: string;
+  [key: string]: unknown;
+}) {
+  try {
+    fs.mkdirSync(TRACE_DIR, { recursive: true });
+    const id = crypto.randomUUID();
+    const record = { id, createdAt: Date.now(), input: data.type, spans: [], ...data };
+    fs.writeFileSync(path.join(TRACE_DIR, `${id}.json`), JSON.stringify(record, null, 2), 'utf-8');
+  } catch {
+    /* tracing must never break the request */
+  }
+}
