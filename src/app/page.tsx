@@ -117,6 +117,10 @@ export default function Home() {
       }
       // Check 0G storage status on load
       if (!cancelled) store.checkStorageStatus();
+      // If a wallet connection was restored, refresh its on-chain balance.
+      if (!cancelled && useIdeStore.getState().isWalletConnected) {
+        useIdeStore.getState().refreshWalletBalance().catch(() => {});
+      }
       // Restore the last open project after a refresh (persisted pointer →
       // reload the actual files from the server).
       if (!cancelled) {

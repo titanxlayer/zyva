@@ -161,6 +161,7 @@ export interface IdeState {
   connectWallet: () => void;
   connectMetaMask: () => Promise<void>;
   disconnectWallet: () => void;
+  refreshWalletBalance: () => Promise<void>;
   commitTo0G: (message: string) => void;
   gitCommitAndPush: (message: string) => Promise<void>;
   refreshGitStatus: () => Promise<void>;
@@ -746,6 +747,7 @@ export const useIdeStore = create<IdeState>()(persist((set, get) => ({
           isWalletModalOpen: false,
           walletError: ''
         });
+        get().refreshWalletBalance();
       } catch (err: any) {
         console.error('MetaMask connection failed:', err);
         let errorMsg = err.message || 'MetaMask connection rejected or failed';
@@ -774,6 +776,7 @@ export const useIdeStore = create<IdeState>()(persist((set, get) => ({
               isWalletModalOpen: false,
               walletError: ''
             });
+            get().refreshWalletBalance();
             return true;
           } else {
             throw new Error(data.error || 'Failed to connect fallback wallet');
@@ -793,6 +796,18 @@ export const useIdeStore = create<IdeState>()(persist((set, get) => ({
       walletAddress: '',
       walletBalance: 0
     });
+  },
+
+  refreshWalletBalance: async () => {
+    const addr = get().walletAddress;
+    if (!addr) return;
+    try {
+      const res = await fetch('/api/wallet/balance?address=' + encodeURIComponent(addr), { signal: AbortSignal.timeout(10000) }).catch(() => null);
+      const data = res && res.ok ? await res.json().catch(() => null) : null;
+      if (data?.success && typeof data.balance === 'number') {
+        set({ walletBalance: data.balance });
+      }
+    } catch { /* keep previous balance */ }
   },
 
   updateSettings: (key, value) => {
