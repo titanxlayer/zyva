@@ -11,19 +11,30 @@
 
 import path from 'path';
 import fs from 'fs';
-import Database from 'better-sqlite3';
+import type DatabaseType from 'better-sqlite3';
 
 const ZYVA_DIR = '.zyva';
 const DB_FILE  = 'project.db';
 const cache = new Map<string, ProjectDb>();
 
+// Lazily require better-sqlite3 so importing this module never loads the native
+// binding (keeps the agent loop working on desktop builds without SQLite packaged).
+let DatabaseCtor: typeof DatabaseType | null = null;
+function loadDatabaseCtor(): typeof DatabaseType {
+  if (DatabaseCtor) return DatabaseCtor;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  DatabaseCtor = require('better-sqlite3') as typeof DatabaseType;
+  return DatabaseCtor;
+}
+
 export class ProjectDb {
-  private db: Database.Database;
+  private db: DatabaseType.Database;
 
   constructor(projectPath: string) {
     const dir = path.join(projectPath, ZYVA_DIR);
     fs.mkdirSync(dir, { recursive: true });
     const dbPath = path.join(dir, DB_FILE);
+    const Database = loadDatabaseCtor();
     this.db = new Database(dbPath);
     // WAL mode — better concurrent read performance
     this.db.pragma('journal_mode = WAL');

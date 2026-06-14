@@ -138,6 +138,7 @@ function buildWCFiles(fileContents: Record<string, string>) {
 export default function LivePreview() {
   const fileContents = useIdeStore(s => s.fileContents);
   const projectPath = useIdeStore(s => s.projectPath);
+  const isCloudIde = useIdeStore(s => s.isCloudIde);
 
   const [status, setStatus] = useState<'idle' | 'booting' | 'installing' | 'starting' | 'ready' | 'error'>('idle');
   const [previewUrl, setPreviewUrl] = useState('');
@@ -386,16 +387,18 @@ export default function LivePreview() {
           </button>
         </div>
 
-        {/* Open in browser */}
-        <button
-          onClick={openInBrowser}
-          disabled={e2bLoading}
-          title="Open full preview in new tab (E2B sandbox)"
-          className="flex items-center gap-1 px-2 py-1 text-[11px] text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded-lg cursor-pointer transition-colors shrink-0 disabled:opacity-50"
-        >
-          {e2bLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
-          <span>Open</span>
-        </button>
+        {/* Open in browser — E2B real URL, cloud only (desktop stays light / WebContainer-only) */}
+        {isCloudIde && (
+          <button
+            onClick={openInBrowser}
+            disabled={e2bLoading}
+            title="Open full preview in a new tab (cloud sandbox)"
+            className="flex items-center gap-1 px-2 py-1 text-[11px] text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded-lg cursor-pointer transition-colors shrink-0 disabled:opacity-50"
+          >
+            {e2bLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+            <span>Open</span>
+          </button>
+        )}
       </div>
 
       {/* Preview area with resizable frame */}
