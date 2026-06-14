@@ -93,89 +93,76 @@ zyva-app/
 ├── src/
 │   ├── app/                    Next.js App Router
 │   │   ├── api/
-│   │   │   ├── agent/          SSE streaming multi-agent graph
-│   │   │   ├── ai/             Chat completions
+│   │   │   ├── agent/
+│   │   │   │   ├── run/        Iterative agent loop (tools) + self-healing build (SSE)
+│   │   │   │   └── stream/     Multi-agent graph (Architect → Review) (SSE)
+│   │   │   ├── ai/             Chat completions (streaming, 0G PC / ZYVA)
 │   │   │   ├── auth/           NextAuth route handler
-│   │   │   ├── git/            Real git commit + push to GitHub
-│   │   │   ├── sandbox/        E2B sandbox executor endpoint
+│   │   │   ├── checkpoints/    List snapshots + rollback
+│   │   │   ├── git/            Real git commit + push + clone from GitHub
+│   │   │   ├── index/          Semantic index of a project
+│   │   │   ├── sandbox/        E2B preview (cloud) + build tasks + kill
 │   │   │   ├── terminal/       Secure command execution
 │   │   │   ├── traces/         Observability trace list
-│   │   │   └── workspace/      File tree, save, create project
+│   │   │   └── workspace/      File tree, save, create project (+ design retrieval), browse
 │   │   ├── auth/               Sign-in + error pages
-│   │   └── docs/               Public documentation pages
+│   │   ├── docs/               Public documentation pages
+│   │   └── icon.png            App favicon (ZYVA logo)
 │   │
 │   ├── components/
-│   │   ├── AgentSwarm.tsx      Right panel: Swarm + AI Chat
+│   │   ├── AgentSwarm.tsx      Right panel: Swarm + AI Chat + Agent Loop toggle
 │   │   ├── ChatComponents.tsx  Markdown, action cards, TEE badge
-│   │   ├── IdeBodyClass.tsx    IDE vs page scroll isolation
-│   │   ├── LivePreview.tsx     Babel-transpiled iframe preview
+│   │   ├── LivePreview.tsx     WebContainer preview (+ E2B "Open in browser", cloud only)
 │   │   ├── MonacoCodeEditor.tsx Editor + Prettier + Emmet + snippets
 │   │   ├── SidebarPanel.tsx    Explorer, Source Control, Extensions
 │   │   └── TerminalConsole.tsx Secure terminal with TEE badge
 │   │
 │   ├── engine/                 ← Core runtime
 │   │   ├── config.ts           Central env/config
-│   │   ├── execution/
-│   │   │   └── e2bExecutor.ts  E2B on-demand sandbox
-│   │   ├── git/
-│   │   │   └── gitOps.ts       Real git operations
-│   │   ├── observability/
-│   │   │   └── trace.ts        Trace store + Langfuse forwarder
-│   │   ├── orchestrator/       Multi-agent graph (Architect → Review)
+│   │   ├── tools/              Agent tool schema + executor (read/write/edit/grep/run/db)
+│   │   ├── orchestrator/
+│   │   │   ├── runAgentLoop.ts ReAct loop: reason → tool call → observe → repeat ⭐
+│   │   │   ├── graph.ts        Multi-agent graph (Architect/Frontend/Backend/Review)
+│   │   │   ├── runAgent.ts     Single bounded reasoning step
+│   │   │   └── agents.ts       Agent role definitions
+│   │   ├── build/              Self-healing build loop (run build → fix errors → repeat)
+│   │   ├── db/                 Per-project SQLite (better-sqlite3, lazy)
+│   │   ├── design/             Design-template library retrieval (embeddings)
+│   │   ├── repomap/            Aider-style repo map (symbol outline)
+│   │   ├── retrieval/          Chunker + vector store + embed/rerank query
+│   │   ├── execution/          E2B sandbox (preview + build, cloud only)
+│   │   ├── git/                Real git operations (commit/push/clone)
 │   │   ├── patch/              SEARCH/REPLACE + snapshot/rollback
 │   │   ├── providers/
-│   │   │   ├── ogpc.ts         0G Private Computer provider ⭐
-│   │   │   ├── cerebras.ts     Cerebras (test fallback)
-│   │   │   ├── dashscope.ts    Qwen embeddings
-│   │   │   └── types.ts        Provider interfaces
-│   │   ├── retrieval/          Chunker + vector store + query
+│   │   │   ├── ogpc.ts         0G Private Computer — primary inference ⭐
+│   │   │   ├── zyva.ts         ZYVA (DO Inference Router) — internal/locked
+│   │   │   ├── dashscope.ts    Qwen embeddings + rerank
+│   │   │   ├── ollama.ts       Local embeddings (optional)
+│   │   │   ├── gateway.ts      Embedding gateway (optional)
+│   │   │   └── types.ts        Provider interfaces (+ tool support)
 │   │   ├── security/           Command policy (allow/approve/deny)
+│   │   ├── observability/      Trace store + Langfuse forwarder
 │   │   └── tee/                Honest TEE attestation state
 │   │
-│   ├── lib/
-│   │   ├── auth-guard.ts       API auth middleware helper
-│   │   ├── extensions-catalog.ts Extension definitions
-│   │   ├── file-icons.ts       File icon mapping
-│   │   ├── github.ts           GitHub OAuth token + repo API
-│   │   ├── prettier-format.ts  Browser Prettier integration
-│   │   ├── prisma.ts           Prisma client singleton
-│   │   ├── snippets.ts         React/TS code snippets
-│   │   ├── wallet.ts           SIWE wallet signature verify
-│   │   └── workspace-isolation.ts Per-user path isolation
-│   │
-│   ├── auth.ts                 NextAuth v5 config
-│   ├── middleware.ts            Edge auth middleware
-│   └── store/
-│       └── useIdeStore.ts      Zustand global state
+│   ├── lib/                    auth-guard, github, prisma, wallet (SIWE),
+│   │                           workspace-isolation, extensions, snippets, file-icons
+│   ├── auth.ts                 NextAuth v5 config (Google/GitHub/SIWE)
+│   ├── middleware.ts           Edge auth middleware
+│   └── store/useIdeStore.ts    Zustand global state
 │
 ├── templates/                  Injected into every new user project
-│   ├── CLAUDE.md               Entry point for AI agent context
-│   ├── AGENTS.md               Stack rules + coding conventions
-│   └── DESIGN.md               ZYVA design system (dark, #7c3aed)
+│   ├── CLAUDE.md · AGENTS.md · DESIGN.md   Guidance files
+│   └── design-library/         74 curated DESIGN.md systems + embeddings (retrieval)
 │
 ├── landing/                    Static landing page (zyva.dev)
-│   └── assets/
-│       ├── logo.png
-│       └── screenshot.png
-│
-├── desktop/                    Electron wrapper
-│   ├── main.js
-│   ├── prepackage.mjs
-│   └── package.json
-│
-├── prisma/
-│   └── schema.prisma           DB schema (users, sessions, projects, traces)
-│
+├── desktop/                    Electron wrapper (main.js, prepackage.mjs)
 ├── gateway/                    Standalone embedding gateway (server mode)
-│
-├── scripts/                    Test + stress-test scripts
-│   ├── test-auth-flow.mjs
-│   ├── test-extensions.mjs
-│   └── test-cloud-stress.mjs
-│
+├── prisma/schema.prisma        DB schema (users, sessions, projects, traces)
+├── Dockerfile                  Cloud IDE container image (→ GHCR / Packages)
 └── .github/workflows/
     ├── ci.yml                  Build + lint on push
-    └── release.yml             Cross-platform desktop builds on tag
+    ├── release.yml             Cross-platform desktop builds on tag
+    └── docker.yml              Container image → GitHub Packages (GHCR)
 ```
 
 ---
