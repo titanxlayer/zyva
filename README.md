@@ -21,6 +21,23 @@
 
 ---
 
+## Download (Desktop App)
+
+Latest release: **v0.4.0** — [all releases →](https://github.com/titanxlayer/zyva/releases/latest)
+
+| Platform | Download |
+|---|---|
+| 🪟 **Windows** | [`ZYVA.Setup.0.4.0.exe`](https://github.com/titanxlayer/zyva/releases/download/v0.4.0/ZYVA.Setup.0.4.0.exe) |
+| 🍎 **macOS** (Apple Silicon) | [`ZYVA-0.4.0-arm64.dmg`](https://github.com/titanxlayer/zyva/releases/download/v0.4.0/ZYVA-0.4.0-arm64.dmg) |
+| 🐧 **Linux** (.deb) | [`zyva-desktop_0.4.0_amd64.deb`](https://github.com/titanxlayer/zyva/releases/download/v0.4.0/zyva-desktop_0.4.0_amd64.deb) |
+| 🐧 **Linux** (AppImage) | [`ZYVA-0.4.0.AppImage`](https://github.com/titanxlayer/zyva/releases/download/v0.4.0/ZYVA-0.4.0.AppImage) |
+
+> Builds are currently unsigned — your OS may warn on first launch. Prefer the browser? Just use the **[Cloud IDE](https://app.zyva.dev)** (no install).
+>
+> **Self-hosting?** A container image is published to [GitHub Packages (GHCR)](https://github.com/titanxlayer/zyva/pkgs/container/zyva): `docker pull ghcr.io/titanxlayer/zyva:latest`
+
+---
+
 ## What is ZYVA?
 
 ZYVA is a Lovable-style AI coding environment with two modes:
