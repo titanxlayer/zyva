@@ -16,34 +16,48 @@ export const TOKENS_PER_CREDIT = 10_000;
 export interface PlanDef {
   id: string;
   name: string;
-  priceUsd: number;
+  priceUsd: number;        // crypto (Helio) price — Pro is the $0 beta promo
+  cardPriceUsd: number;    // card (Dodo) price — real billed amount
   credits: number;
-  paylinkEnv: string; // env var holding the Helio Pay Link URL
+  paylinkEnv: string;      // env var holding the Helio Pay Link URL
+  dodoProductId: string;   // Dodo Payments product id (from the dashboard)
   perks: string[];
 }
 
 export const PLANS: Record<string, PlanDef> = {
   free: {
-    id: 'free', name: 'Free', priceUsd: 0, credits: 0, paylinkEnv: '',
+    id: 'free', name: 'Free', priceUsd: 0, cardPriceUsd: 0, credits: 0,
+    paylinkEnv: '', dodoProductId: '',
     perks: ['Bring your own 0G key', 'Community support'],
   },
   starter: {
-    id: 'starter', name: 'Starter', priceUsd: 10, credits: 80, paylinkEnv: 'HELIO_PAYLINK_STARTER',
+    id: 'starter', name: 'Starter', priceUsd: 10, cardPriceUsd: 10, credits: 80,
+    paylinkEnv: 'HELIO_PAYLINK_STARTER', dodoProductId: 'pdt_0Nh12GIFl7c8ATxpwwFTv',
     perks: ['80 Zyva Credits', 'Community support'],
   },
   pro: {
-    id: 'pro', name: 'Pro (Early Adopter)', priceUsd: 0, credits: 200, paylinkEnv: 'HELIO_PAYLINK_PRO',
-    perks: ['200 Zyva Credits', 'Beta promo — free', 'Email support'],
+    id: 'pro', name: 'Pro (Early Adopter)', priceUsd: 0, cardPriceUsd: 20, credits: 200,
+    paylinkEnv: 'HELIO_PAYLINK_PRO', dodoProductId: 'pdt_0Nh13dkCRQgMqhDDfrNAl',
+    perks: ['200 Zyva Credits', 'Beta promo — free via crypto', 'Email support'],
   },
   team: {
-    id: 'team', name: 'Team', priceUsd: 40, credits: 500, paylinkEnv: 'HELIO_PAYLINK_TEAM',
+    id: 'team', name: 'Team', priceUsd: 40, cardPriceUsd: 40, credits: 500,
+    paylinkEnv: 'HELIO_PAYLINK_TEAM', dodoProductId: 'pdt_0Nh14YZMVwrQJPgRd8ndK',
     perks: ['500 Zyva Credits', 'Priority routing', 'Collaborative workspaces'],
   },
   scale: {
-    id: 'scale', name: 'Scale', priceUsd: 100, credits: 1500, paylinkEnv: 'HELIO_PAYLINK_SCALE',
+    id: 'scale', name: 'Scale', priceUsd: 100, cardPriceUsd: 100, credits: 1500,
+    paylinkEnv: 'HELIO_PAYLINK_SCALE', dodoProductId: 'pdt_0Nh14kZjTdvJhMoyvYuyW',
     perks: ['1,500 Zyva Credits', 'Claude Fable-5 audit pass', 'Dedicated success manager'],
   },
 };
+
+/** Reverse lookup: Dodo product id → plan id. */
+export function planFromDodoProduct(productId: string): string | null {
+  if (!productId) return null;
+  const match = Object.values(PLANS).find((p) => p.dodoProductId === productId);
+  return match?.id ?? null;
+}
 
 /** Resolve a plan's Helio Pay Link URL from env (empty if not configured). */
 export function planPaylink(planId: string): string {
@@ -52,11 +66,39 @@ export function planPaylink(planId: string): string {
   return process.env[def.paylinkEnv] || '';
 }
 
-/** Public plan list for the UI (includes live pay link URLs). */
-export function listPlansForUi() {
+/**
+ * Build a Dodo Payments static checkout URL for a plan, opened in a new tab.
+ * Test mode uses test.checkout.dodopayments.com (set DODO_MODE=test).
+ * userId/email are passed as metadata so the webhook can match the buyer.
+ */
+export function dodoCheckoutUrl(planId: string, userId: string, email?: string): string {
+  const def = PLANS[planId];
+  if (!def?.dodoProductId) return '';
+  const base = process.env.DODO_MODE === 'test'
+    ? 'https://test.checkout.dodopayments.com/buy'
+    : 'https://checkout.dodopayments.com/buy';
+  const params = new URLSearchParams({ quantity: '1' });
+  if (userId) params.set('metadata_userId', userId);
+  if (email) params.set('email', email);
+  const redirect = process.env.DODO_REDIRECT_URL || process.env.NEXTAUTH_URL || '';
+  if (redirect) params.set('redirect_url', redirect);
+  return `${base}/${def.dodoProductId}?${params.toString()}`;
+}
+
+/** Public plan list for the UI (includes live pay link URLs + Dodo card checkout). */
+export function listPlansForUi(userId?: string, email?: string) {
   return Object.values(PLANS)
     .filter((p) => p.id !== 'free')
-    .map((p) => ({ id: p.id, name: p.name, priceUsd: p.priceUsd, credits: p.credits, perks: p.perks, paylink: planPaylink(p.id) }));
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      priceUsd: p.priceUsd,
+      cardPriceUsd: p.cardPriceUsd,
+      credits: p.credits,
+      perks: p.perks,
+      paylink: planPaylink(p.id),
+      dodoUrl: userId ? dodoCheckoutUrl(p.id, userId, email) : '',
+    }));
 }
 
 export interface CreditState {

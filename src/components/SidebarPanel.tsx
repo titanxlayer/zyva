@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useIdeStore } from '@/store/useIdeStore';
 import {
   ChevronRight, ChevronDown, FileCode2, MoreHorizontal,
-  Search as SearchIcon, LayoutTemplate, Zap, Wallet, Check, Download, Trash2
+  Search as SearchIcon, LayoutTemplate, Zap, Wallet, Check, Download, Trash2, CreditCard
 } from 'lucide-react';
 import { EXTENSIONS_CATALOG, THEME_FILE_MAP, type Extension } from '@/lib/extensions-catalog';
 import { getFileIcon, getFolderIcon } from '@/lib/file-icons';
@@ -15,7 +15,7 @@ import { FileNode } from '@/store/useIdeStore';
 interface PlanState {
   plan: string; planName: string; credits: number; creditsUsed: number; remaining: number;
   planRenewsAt: string | null;
-  plans: { id: string; name: string; priceUsd: number; credits: number; perks: string[]; paylink: string }[];
+  plans: { id: string; name: string; priceUsd: number; cardPriceUsd: number; credits: number; perks: string[]; paylink: string; dodoUrl: string }[];
 }
 
 function PlanUsage() {
@@ -68,24 +68,43 @@ function PlanUsage() {
       {showPlans && (
         <div className="mt-3 space-y-2">
           {data.plans.map(p => (
-            <a
+            <div
               key={p.id}
-              href={p.paylink || undefined}
-              target="_blank"
-              rel="noopener noreferrer"
               data-testid={`plan-${p.id}`}
-              onClick={(e) => { if (!p.paylink) { e.preventDefault(); } }}
-              className={`block rounded-lg border p-2.5 transition-colors ${p.paylink ? 'border-[#3c3c3c] hover:border-[#7c3aed]/60 cursor-pointer' : 'border-[#2b2d31] opacity-50 cursor-not-allowed'}`}
+              className="rounded-lg border border-[#3c3c3c] p-2.5"
             >
               <div className="flex items-center justify-between">
                 <span className="text-[12px] font-semibold text-white">{p.name}</span>
-                <span className="text-[12px] text-[#4ec9b0] font-mono">{p.priceUsd === 0 ? 'Free' : `$${p.priceUsd}/mo`}</span>
+                <span className="text-[12px] text-[#4ec9b0] font-mono">{p.cardPriceUsd === 0 ? 'Free' : `$${p.cardPriceUsd}/mo`}</span>
               </div>
               <div className="text-[10px] text-zinc-500 mt-0.5">{p.credits} credits · {p.perks.slice(1).join(' · ') || p.perks[0]}</div>
-              {!p.paylink && <div className="text-[9px] text-amber-500/70 mt-1">Checkout not configured yet</div>}
-            </a>
+
+              <div className="flex gap-1.5 mt-2">
+                <a
+                  href={p.dodoUrl || undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid={`plan-${p.id}-card`}
+                  onClick={(e) => { if (!p.dodoUrl) e.preventDefault(); }}
+                  className={`flex-1 flex items-center justify-center gap-1 text-[10px] font-semibold py-1.5 rounded-md transition-colors ${p.dodoUrl ? 'bg-[#7c3aed]/20 hover:bg-[#7c3aed]/30 text-[#c4b5fd] border border-[#7c3aed]/40 cursor-pointer' : 'bg-[#2b2d31] text-zinc-600 cursor-not-allowed'}`}
+                >
+                  <CreditCard className="w-3 h-3" /> Card
+                </a>
+                <a
+                  href={p.paylink || undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid={`plan-${p.id}-crypto`}
+                  onClick={(e) => { if (!p.paylink) e.preventDefault(); }}
+                  className={`flex-1 flex items-center justify-center gap-1 text-[10px] font-semibold py-1.5 rounded-md transition-colors ${p.paylink ? 'bg-[#4ec9b0]/15 hover:bg-[#4ec9b0]/25 text-[#4ec9b0] border border-[#4ec9b0]/40 cursor-pointer' : 'bg-[#2b2d31] text-zinc-600 cursor-not-allowed'}`}
+                >
+                  <Wallet className="w-3 h-3" /> Crypto{p.id === 'pro' && p.priceUsd === 0 ? ' · Free' : ''}
+                </a>
+              </div>
+              {!p.dodoUrl && !p.paylink && <div className="text-[9px] text-amber-500/70 mt-1">Checkout not configured yet</div>}
+            </div>
           ))}
-          <p className="text-[9px] text-zinc-600 text-center pt-1">Secure crypto/card checkout via Helio</p>
+          <p className="text-[9px] text-zinc-600 text-center pt-1">Card via Dodo Payments · Crypto via Helio · opens in a new tab</p>
         </div>
       )}
     </div>
