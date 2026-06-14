@@ -99,6 +99,8 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Rehydrate persisted state (wallet + open project + settings) first.
+      try { await useIdeStore.persist.rehydrate(); } catch { /* ignore */ }
       try {
         const res = await fetch('/api/workspace', {
           method: 'POST',
@@ -115,6 +117,15 @@ export default function Home() {
       }
       // Check 0G storage status on load
       if (!cancelled) store.checkStorageStatus();
+      // Restore the last open project after a refresh (persisted pointer →
+      // reload the actual files from the server).
+      if (!cancelled) {
+        const path = useIdeStore.getState().projectPath;
+        const tree = useIdeStore.getState().fileTree;
+        if (path && (!tree || tree.length === 0)) {
+          useIdeStore.getState().loadWorkspace(path).catch(() => {});
+        }
+      }
     })();
     return () => { cancelled = true; };
   }, []);

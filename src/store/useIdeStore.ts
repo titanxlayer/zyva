@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export interface FileNode {
   name: string;
@@ -529,7 +530,7 @@ const ROLE_TO_AGENT: Record<string, string> = {
   architect: 'arch', frontend: 'front', backend: 'back', debug: 'debug', review: 'review',
 };
 
-export const useIdeStore = create<IdeState>((set, get) => ({
+export const useIdeStore = create<IdeState>()(persist((set, get) => ({
   // Initial State — start completely blank; user must open or create a project
   activeFile: '',
   fileContents: {},
@@ -2090,4 +2091,29 @@ export const useIdeStore = create<IdeState>((set, get) => ({
       }
     }
   }
+}), {
+  name: 'zyva-ide',
+  storage: createJSONStorage(() => localStorage),
+  // Avoid SSR hydration mismatches: we rehydrate manually on mount (page.tsx).
+  skipHydration: true,
+  // Persist only lightweight identity/settings + the open-project pointer.
+  // File tree + contents are reloaded from the server on mount (see page.tsx).
+  partialize: (state) => ({
+    isWalletConnected: state.isWalletConnected,
+    walletAddress: state.walletAddress,
+    walletBalance: state.walletBalance,
+    projectName: state.projectName,
+    projectPath: state.projectPath,
+    openedTabs: state.openedTabs,
+    activeFile: state.activeFile,
+    expandedFolders: state.expandedFolders,
+    aiModel: state.aiModel,
+    aiModelNetwork: state.aiModelNetwork,
+    storageNodeUrl: state.storageNodeUrl,
+    autoSync: state.autoSync,
+    useTee: state.useTee,
+    autonomousMode: state.autonomousMode,
+    geminiApiKey: state.geminiApiKey,
+    ogApiKey: state.ogApiKey,
+  }),
 }));

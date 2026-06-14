@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getConfig } from '@/engine/config';
-import { CerebrasProvider } from '@/engine/providers/cerebras';
 import { OGPrivateComputerProvider, isSupportedModel as isOgPcModel } from '@/engine/providers/ogpc';
 import { ZyvaProvider, ZYVA_MODEL_ID } from '@/engine/providers/zyva';
-import { runAgent } from '@/engine/orchestrator/runAgent';
 import { runGraph } from '@/engine/orchestrator/graph';
 import { retrieve } from '@/engine/retrieval';
 import { getTeeRuntimeState } from '@/engine/tee/attestation';
@@ -15,16 +13,11 @@ import { chargeTokens } from '@/lib/billing';
 const ZYVA_MODEL_IDS = new Set(['zyva', 'zyva-v1', ZYVA_MODEL_ID]);
 
 // ── Model routing ───────────────────────────────────────────────────────────
-// GLM models → Cerebras (free for testing). Others → 0G Router (BYO key).
-const CEREBRAS_GLM_MODELS: Record<string, string> = {
-  'glm-5.1': 'zai-glm-4.7',
-  'glm-5': 'zai-glm-4.7',
-  'glm-4.7': 'zai-glm-4.7',
-  'zai-glm-4.7': 'zai-glm-4.7',
-};
+// Primary inference is the 0G Private Computer (pc.0g.ai). Models not served by
+// 0G PC can use the 0G Router with a user-supplied (BYO) key. No Cerebras.
 const OG_ROUTER_MODELS = new Set([
-  '0GM-1.0-35B-A3B', 'deepseek-v4-pro', 'deepseek/deepseek-chat-v3-0324',
-  'qwen3.7-max', 'qwen3.6-plus', 'zai-org/GLM-5.1-FP8', 'zai-org/GLM-5-FP8',
+  '0GM-1.0-35B-A3B', 'deepseek/deepseek-chat-v3-0324',
+  'zai-org/GLM-5.1-FP8', 'zai-org/GLM-5-FP8',
 ]);
 const OG_ROUTER_BASE = 'https://router-api.0g.ai/v1/chat/completions';
 
@@ -138,11 +131,12 @@ export async function POST(req: NextRequest) {
       .filter((m) => m.content);
 
     // ── Multi-agent graph mode (Architect -> specialists -> Review) ───────────
-    if (agentMode && CEREBRAS_GLM_MODELS[targetModel] && cfg.cerebrasApiKey) {
+    if (agentMode && isOgPcModel(targetModel) && cfg.ogpc.apiKey) {
       try {
         const out = await runGraph({
           task: message,
-          model: CEREBRAS_GLM_MODELS[targetModel],
+          model: targetModel,
+          provider: new OGPrivateComputerProvider(cfg.ogpc.apiKey, cfg.ogpc.baseUrl),
           projectPath: projectPath || undefined,
           workspaceContext: `Project: ${projectName || 'none'}\nActive file: ${activeFile || 'none'}\nFile tree:\n${fileTreeStr || '(no project)'}`,
           history: normalizedHistory,
@@ -332,34 +326,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ── 3. Cerebras GLM via bounded orchestrator (retrieval + trace + retry) ──
-    const cerebrasModel = CEREBRAS_GLM_MODELS[targetModel];
-    if (cerebrasModel && cfg.cerebrasApiKey) {
-      try {
-        const out = await runAgent({
-          message,
-          model: cerebrasModel,
-          systemPrompt,
-          history: normalizedHistory,
-          projectPath: projectPath || undefined,
-          reasoningProvider: new CerebrasProvider(cfg.cerebrasApiKey),
-        });
-        if (out.text) {
-          return NextResponse.json({
-            success: true,
-            reply: rescueFormat(out.text, fallbackPath),
-            source: `Cerebras (${targetModel})`,
-            teeRuntime,
-            traceId: out.traceId,
-            retrieval: out.retrieval.map((r) => ({ path: r.path, score: r.score, reranked: r.reranked })),
-          });
-        }
-      } catch (err) {
-        console.warn('Cerebras path failed:', (err as Error).message);
-      }
-    }
-
-    // ── 4. No 0G PC key → DO NOT fall back to mock. Force a real key. ─────────
+    // ── No 0G PC key → DO NOT fall back to mock. Force a real key. ────────────
     return NextResponse.json({
       success: true,
       reply: `🔒 **0G Private Computer key required**\n\nZYVA runs all inference on the **0G Private Computer** (TEE-attested, decentralized). No demo or mock responses — every result is real.\n\nTo start coding with **${targetModel}**, add your key:\n\n1. Get a key at **[pc.0g.ai](https://pc.0g.ai)**\n2. Open **Settings → 0G Private Computer Key**\n3. Paste your key and retry\n\n> ZYVA never fakes output. Real models only.`,
