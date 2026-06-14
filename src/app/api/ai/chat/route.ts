@@ -9,9 +9,6 @@ import { Trace } from '@/engine/observability/trace';
 import { requireAuth } from '@/lib/auth-guard';
 import { chargeTokens } from '@/lib/billing';
 
-// ZYVA (DO Inference Router) — internal model ids. Locked in user-facing UI.
-const ZYVA_MODEL_IDS = new Set(['zyva', 'zyva-v1', ZYVA_MODEL_ID]);
-
 // ── Model routing ───────────────────────────────────────────────────────────
 // Primary inference is the 0G Private Computer (pc.0g.ai). Models not served by
 // 0G PC can use the 0G Router with a user-supplied (BYO) key. No Cerebras.
@@ -130,24 +127,38 @@ export async function POST(req: NextRequest) {
       }))
       .filter((m) => m.content);
 
+    // ── Routing: managed ZYVA engine by default; 0G PC only if user brings key ─
+    // The "0G PC API Key" field is BYOK. If the user pasted their own key we run
+    // on the 0G Private Computer (their quota). Otherwise everything runs on the
+    // managed ZYVA engine (DO router, server key) and is metered against credits.
+    const userOgPcKey = (typeof ogApiKey === 'string' ? ogApiKey.trim() : '');
+    const useByokOgPc = isOgPcModel(targetModel) && !!userOgPcKey;
+    const ogPcKey = useByokOgPc ? userOgPcKey : (isOgPcModel(targetModel) ? cfg.ogpc.apiKey : '');
+    const canOgPc = isOgPcModel(targetModel) && !!ogPcKey;
+    const canManagedZyva = !!cfg.zyva.apiKey;
+
     // ── Multi-agent graph mode (Architect -> specialists -> Review) ───────────
-    if (agentMode && isOgPcModel(targetModel) && cfg.ogpc.apiKey) {
+    if (agentMode && (canOgPc || canManagedZyva)) {
       try {
+        const graphProvider = canOgPc
+          ? new OGPrivateComputerProvider(ogPcKey, cfg.ogpc.baseUrl)
+          : new ZyvaProvider(cfg.zyva.apiKey);
         const out = await runGraph({
           task: message,
-          model: targetModel,
-          provider: new OGPrivateComputerProvider(cfg.ogpc.apiKey, cfg.ogpc.baseUrl),
+          model: canOgPc ? targetModel : ZYVA_MODEL_ID,
+          provider: graphProvider,
           projectPath: projectPath || undefined,
           workspaceContext: `Project: ${projectName || 'none'}\nActive file: ${activeFile || 'none'}\nFile tree:\n${fileTreeStr || '(no project)'}`,
           history: normalizedHistory,
         });
+        if (!canOgPc) meter(systemPrompt.length, message.length, out.reply.length);
         const planNote = out.plan.length
           ? `\n\n> 🧭 Plan (${out.agentsRun.join(' → ')}): ` + out.plan.map((p) => p.title).join('; ')
           : '';
         return NextResponse.json({
           success: true,
           reply: rescueFormat(out.reply, fallbackPath) + planNote,
-          source: `Multi-Agent Graph (${targetModel})`,
+          source: canOgPc ? `Multi-Agent Graph (${targetModel})` : 'Multi-Agent Graph (ZYVA)',
           teeRuntime, traceId: out.traceId, plan: out.plan, agentsRun: out.agentsRun, review: out.review,
         });
       } catch (err) {
@@ -164,14 +175,14 @@ export async function POST(req: NextRequest) {
         : '';
     };
 
-    // ── Streaming path (ZYVA / 0G PC) — token-by-token SSE, no timeout wall ───
-    const canZyva = ZYVA_MODEL_IDS.has(targetModel) && !!cfg.zyva.apiKey;
-    const canOgPc = isOgPcModel(targetModel) && !!cfg.ogpc.apiKey;
-    if (stream && (canZyva || canOgPc)) {
-      const provider = canZyva
-        ? new ZyvaProvider(cfg.zyva.apiKey)
-        : new OGPrivateComputerProvider(cfg.ogpc.apiKey, cfg.ogpc.baseUrl);
-      const sourceLabel = canZyva ? 'ZYVA' : `0G Private Computer (${targetModel})`;
+    // ── Streaming path — token-by-token SSE, no timeout wall ──────────────────
+    if (stream && (canOgPc || canManagedZyva)) {
+      const useOgPc = canOgPc;            // real 0G PC when a key exists (BYO/server)
+      const isManaged = !useOgPc;         // managed ZYVA → meter credits
+      const provider = useOgPc
+        ? new OGPrivateComputerProvider(ogPcKey, cfg.ogpc.baseUrl)
+        : new ZyvaProvider(cfg.zyva.apiKey);
+      const sourceLabel = useOgPc ? `0G Private Computer (${targetModel})` : 'ZYVA';
       const ctx = await buildContext();
       const msgs = [
         { role: 'system' as const, content: systemPrompt + ctx },
@@ -180,27 +191,27 @@ export async function POST(req: NextRequest) {
       ];
       const encoder = new TextEncoder();
       const trace = new Trace(message);
-      trace.set({ model: canZyva ? 'zyva-v1' : targetModel, source: canZyva ? 'zyva-stream' : '0gpc-stream' });
+      trace.set({ model: useOgPc ? targetModel : 'zyva-v1', source: useOgPc ? '0gpc-stream' : 'zyva-stream' });
 
       const readable = new ReadableStream({
         async start(controller) {
           const send = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
           try {
             const out = await provider.generate({
-              model: canZyva ? ZYVA_MODEL_ID : targetModel,
+              model: useOgPc ? targetModel : ZYVA_MODEL_ID,
               messages: msgs,
               temperature: 0.3,
               signal: AbortSignal.timeout(180_000),
               onToken: (t) => send({ type: 'token', text: t }),
             });
-            if (canZyva) meter(systemPrompt.length + ctx.length, message.length, out.text.length);
+            if (isManaged) meter(systemPrompt.length + ctx.length, message.length, out.text.length);
             send({
               type: 'done',
               reply: rescueFormat(out.text, fallbackPath),
               source: sourceLabel,
               teeRuntime,
               traceId: trace.record.id,
-              rateLimit: canZyva ? (provider as ZyvaProvider).lastRateLimit : undefined,
+              rateLimit: isManaged ? (provider as ZyvaProvider).lastRateLimit : undefined,
               teeAttestation: out.teeAttestation,
             });
           } catch (err) {
@@ -222,8 +233,34 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ── 0. ZYVA (DO Inference Router) — INTERNAL ONLY (stress testing) ─────────
-    if (ZYVA_MODEL_IDS.has(targetModel) && cfg.zyva.apiKey) {
+    // ── BYOK 0G Private Computer (user-supplied key, TEE-attested) ────────────
+    if (canOgPc) {
+      const trace = new Trace(message);
+      trace.set({ model: targetModel, source: '0g-private-computer' });
+      try {
+        const ctx = await buildContext();
+        const provider = new OGPrivateComputerProvider(ogPcKey, cfg.ogpc.baseUrl);
+        const out = await provider.generate({
+          model: targetModel,
+          messages: [{ role: 'system', content: systemPrompt + ctx }, ...normalizedHistory, { role: 'user', content: message }],
+          temperature: 0.3,
+        });
+        await trace.flush();
+        if (out.text) {
+          return NextResponse.json({
+            success: true, reply: rescueFormat(out.text, fallbackPath),
+            source: `0G Private Computer (${targetModel})`, teeRuntime, traceId: trace.record.id,
+            teeAttestation: out.teeAttestation,
+          });
+        }
+      } catch (err) {
+        await trace.flush();
+        console.warn('0G PC path failed:', (err as Error).message);
+      }
+    }
+
+    // ── Managed ZYVA engine (DO router, server key) — metered by credits ──────
+    if (canManagedZyva) {
       const trace = new Trace(message);
       trace.set({ model: 'zyva-v1', source: 'zyva-do-router' });
       const ctx = await buildContext();
@@ -257,33 +294,7 @@ export async function POST(req: NextRequest) {
       await trace.flush();
     }
 
-    // ── 1. 0G Private Computer — primary ZYVA inference (TEE-attested) ─────────
-    if (isOgPcModel(targetModel) && cfg.ogpc.apiKey) {
-      const trace = new Trace(message);
-      trace.set({ model: targetModel, source: '0g-private-computer' });
-      try {
-        const ctx = await buildContext();
-        const provider = new OGPrivateComputerProvider(cfg.ogpc.apiKey, cfg.ogpc.baseUrl);
-        const out = await provider.generate({
-          model: targetModel,
-          messages: [{ role: 'system', content: systemPrompt + ctx }, ...normalizedHistory, { role: 'user', content: message }],
-          temperature: 0.3,
-        });
-        await trace.flush();
-        if (out.text) {
-          return NextResponse.json({
-            success: true, reply: rescueFormat(out.text, fallbackPath),
-            source: `0G Private Computer (${targetModel})`, teeRuntime, traceId: trace.record.id,
-            teeAttestation: out.teeAttestation,
-          });
-        }
-      } catch (err) {
-        await trace.flush();
-        console.warn('0G PC path failed:', (err as Error).message);
-      }
-    }
-
-    // ── 2. 0G Router (BYO key) — real decentralized inference ─────────────────
+    // ── 0G Router (BYO key) — real decentralized inference ────────────────────
     if (ogApiKey && OG_ROUTER_MODELS.has(targetModel)) {
       const trace = new Trace(message);
       trace.set({ model: targetModel, source: '0g-router' });
@@ -318,19 +329,11 @@ export async function POST(req: NextRequest) {
       await trace.flush();
     }
 
-    if (OG_ROUTER_MODELS.has(targetModel) && !ogApiKey) {
-      return NextResponse.json({
-        success: true,
-        reply: `⚠️ Model **${targetModel}** needs a **0G Router API key** from [router.0g.ai](https://router.0g.ai). Add it in Settings → 0G Router Key.\n\nFree alternative: pick **GLM-5.1** (no key required).`,
-        source: '0G Router (no key)', teeRuntime,
-      });
-    }
-
-    // ── No 0G PC key → DO NOT fall back to mock. Force a real key. ────────────
+    // ── No inference backend configured at all (server misconfig) ─────────────
     return NextResponse.json({
       success: true,
-      reply: `🔒 **0G Private Computer key required**\n\nZYVA runs all inference on the **0G Private Computer** (TEE-attested, decentralized). No demo or mock responses — every result is real.\n\nTo start coding with **${targetModel}**, add your key:\n\n1. Get a key at **[pc.0g.ai](https://pc.0g.ai)**\n2. Open **Settings → 0G Private Computer Key**\n3. Paste your key and retry\n\n> ZYVA never fakes output. Real models only.`,
-      source: '0G Private Computer (no key)',
+      reply: `⚠️ The ZYVA inference engine is temporarily unavailable. Please try again in a moment.\n\n*(If you run a self-hosted build, set \`ZYVA_DO_API_KEY\` for the managed engine, or paste your own 0G PC key in the field above.)*`,
+      source: 'unavailable',
       teeRuntime,
     });
   } catch (err) {
