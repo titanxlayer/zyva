@@ -610,7 +610,7 @@ export const useIdeStore = create<IdeState>((set, get) => ({
 
   aiModel: 'minimax-m3',
   aiModelNetwork: 'mainnet',
-  storageNodeUrl: 'https://mainnet.0g.ai',
+  storageNodeUrl: 'https://0g-rpc.publicnode.com',
   autoSync: true,
   useTee: true,
   geminiApiKey: '',
@@ -967,9 +967,10 @@ export const useIdeStore = create<IdeState>((set, get) => ({
   checkStorageStatus: async () => {
     const nodeUrl = get().storageNodeUrl;
     try {
-      const res = await fetch(`${nodeUrl}/`, { method: 'HEAD', signal: AbortSignal.timeout(5000) }).catch(() => null);
-      const online = res !== null && (res.ok || res.status < 500);
-      set({ storageNodeOnline: online });
+      // Probe via our own server (the browser can't ping the node directly — CORS).
+      const res = await fetch('/api/storage/status?url=' + encodeURIComponent(nodeUrl), { signal: AbortSignal.timeout(8000) }).catch(() => null);
+      const data = res && res.ok ? await res.json().catch(() => null) : null;
+      set({ storageNodeOnline: data?.online === true });
       if (get().projectPath) {
         const idxRes = await fetch('/api/index?path=' + encodeURIComponent(get().projectPath || '')).catch(() => null);
         set({ memoryIndexSynced: idxRes?.ok === true });

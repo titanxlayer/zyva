@@ -8,6 +8,7 @@ import TerminalConsole from '@/components/TerminalConsole';
 import AgentSwarm from '@/components/AgentSwarm';
 import LivePreview from '@/components/LivePreview';
 import IdeBodyClass from '@/components/IdeBodyClass';
+import CreditsBadge from '@/components/CreditsBadge';
 import { 
   Search, Settings, Files, GitBranch, Box, LayoutTemplate,
   User, ChevronRight, X, RefreshCw, AlertCircle,
@@ -456,6 +457,7 @@ export default function Home() {
 
         {/* Right Info Status */}
         <div className="w-1/3 flex items-center justify-end space-x-4 select-none">
+          <CreditsBadge />
           <div className="relative">
             <div
               className="flex items-center space-x-1.5 bg-[#1e1e1e] border border-[#2b2d31] px-2 py-0.5 rounded-full cursor-pointer hover:border-[#3b3d41]"
@@ -484,7 +486,7 @@ export default function Home() {
                     <button onClick={() => setShowStorageHelper(false)} className="text-zinc-500 hover:text-white text-[14px] cursor-pointer">×</button>
                   </div>
                   <p className="text-[11px] text-zinc-400 leading-relaxed mb-3">
-                    The 0G storage node at <code className="text-[#4ec9b0] bg-zinc-900 px-1 rounded">{store.storageNodeUrl}</code> is unreachable from your browser. This is normal — direct browser-to-node pings are blocked by CORS.
+                    The 0G network endpoint at <code className="text-[#4ec9b0] bg-zinc-900 px-1 rounded">{store.storageNodeUrl}</code> didn&apos;t respond to a server-side health check. Core features below keep working regardless.
                   </p>
                   <div className="space-y-2 text-[11px]">
                     <div className="bg-[#161720] border border-[#2b2d31] rounded-lg p-2.5">

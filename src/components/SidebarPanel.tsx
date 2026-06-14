@@ -263,7 +263,7 @@ export default function SidebarPanel() {
                   className="px-3 py-1.5 hover:bg-[#094771] hover:text-white cursor-pointer transition-colors"
                   onClick={() => {
                     store.updateSettings('aiModel', 'glm-5.1');
-                    store.updateSettings('storageNodeUrl', 'https://mainnet.0g.ai');
+                    store.updateSettings('storageNodeUrl', 'https://0g-rpc.publicnode.com');
                     store.updateSettings('autoSync', true);
                     store.updateSettings('useTee', true);
                     store.updateSettings('autonomousMode', true);

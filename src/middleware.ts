@@ -16,6 +16,7 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/billing/webhook') ||
     pathname.startsWith('/api/billing/dodo/webhook') ||
+    pathname.startsWith('/api/storage/status') ||
     pathname.startsWith('/docs') ||
     pathname === '/favicon.ico' ||
     pathname === '/favicon.png' ||
