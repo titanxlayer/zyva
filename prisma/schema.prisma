@@ -24,6 +24,13 @@ model User {
 
   workspacePath String? @unique
 
+  // ── Billing / credits (Helio subscriptions) ──
+  plan                String    @default("free")  // free | starter | pro | team | scale
+  credits             Float     @default(0)        // credits granted for the current period
+  creditsUsed         Float     @default(0)        // credits consumed this period
+  planRenewsAt        DateTime?                     // next reset / renewal date
+  helioSubscriptionId String?                       // Helio subscription id (for matching webhooks)
+
   @@map("users")
 }
 

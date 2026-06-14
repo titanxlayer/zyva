@@ -8,6 +8,8 @@ import { runGraph } from '@/engine/orchestrator/graph';
 import { retrieve } from '@/engine/retrieval';
 import { getTeeRuntimeState } from '@/engine/tee/attestation';
 import { Trace } from '@/engine/observability/trace';
+import { requireAuth } from '@/lib/auth-guard';
+import { chargeTokens } from '@/lib/billing';
 
 // ZYVA (DO Inference Router) — internal model ids. Locked in user-facing UI.
 const ZYVA_MODEL_IDS = new Set(['zyva', 'zyva-v1', ZYVA_MODEL_ID]);
@@ -104,6 +106,13 @@ Always answer in the same language as the user.`;
 
 export async function POST(req: NextRequest) {
   const cfg = getConfig();
+  const { userId } = await requireAuth();
+  // Estimate + meter ZYVA credit usage (managed model only). Non-fatal.
+  const meter = (systemLen: number, userLen: number, replyLen: number) => {
+    if (!userId) return;
+    const tokens = Math.round((systemLen + userLen + replyLen) / 4);
+    chargeTokens(userId, tokens).catch(() => {});
+  };
   try {
     const body = await req.json();
     const {
@@ -190,6 +199,7 @@ export async function POST(req: NextRequest) {
               signal: AbortSignal.timeout(180_000),
               onToken: (t) => send({ type: 'token', text: t }),
             });
+            if (canZyva) meter(systemPrompt.length + ctx.length, message.length, out.text.length);
             send({
               type: 'done',
               reply: rescueFormat(out.text, fallbackPath),
@@ -231,6 +241,7 @@ export async function POST(req: NextRequest) {
           const out = await provider.generate({ model: ZYVA_MODEL_ID, messages: msgs, temperature: 0.3, signal: AbortSignal.timeout(115000) });
           if (out.text) {
             await trace.flush();
+            meter(systemPrompt.length + ctx.length, message.length, out.text.length);
             return NextResponse.json({
               success: true, reply: rescueFormat(out.text, fallbackPath),
               source: 'ZYVA', teeRuntime, traceId: trace.record.id,

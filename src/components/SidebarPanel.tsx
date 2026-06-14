@@ -11,6 +11,87 @@ import { getFileIcon, getFolderIcon } from '@/lib/file-icons';
 
 import { FileNode } from '@/store/useIdeStore';
 
+// ── Plan & Usage (Helio subscription) ──────────────────────────────────────────
+interface PlanState {
+  plan: string; planName: string; credits: number; creditsUsed: number; remaining: number;
+  planRenewsAt: string | null;
+  plans: { id: string; name: string; priceUsd: number; credits: number; perks: string[]; paylink: string }[];
+}
+
+function PlanUsage() {
+  const [data, setData] = useState<PlanState | null>(null);
+  const [showPlans, setShowPlans] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/billing/me').then(r => r.json()).then(d => { if (d.success) setData(d); }).catch(() => {});
+  }, []);
+
+  if (!data) return null;
+  const used = data.creditsUsed || 0;
+  const total = data.credits || 0;
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  const reset = data.planRenewsAt ? new Date(data.planRenewsAt).toLocaleDateString(undefined, { month: '2-digit', day: '2-digit' }) : null;
+  const isPaid = data.plan !== 'free';
+
+  return (
+    <div data-testid="plan-usage" className="bg-[#1c1c22] border border-[#2b2d31] rounded-xl p-3.5">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <Zap className="w-3.5 h-3.5 text-[#a78bfa]" />
+          <span className="text-[12px] font-bold text-white">{data.planName}</span>
+        </div>
+        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[#7c3aed]/20 text-[#a78bfa] uppercase tracking-wide">{isPaid ? 'Active' : 'Free'}</span>
+      </div>
+
+      {isPaid ? (
+        <>
+          <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
+            <span>Credits</span>
+            <span className="font-mono">{used.toFixed(1)} / {total}{reset ? ` · resets ${reset}` : ''}</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-[#2b2d31] overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-[#7c3aed] to-[#4ec9b0]" style={{ width: `${pct}%` }} />
+          </div>
+        </>
+      ) : (
+        <p className="text-[11px] text-zinc-500 leading-relaxed">Bring your own 0G key, or subscribe for managed ZYVA credits.</p>
+      )}
+
+      <button
+        data-testid="upgrade-btn"
+        onClick={() => setShowPlans(v => !v)}
+        className="w-full mt-3 text-[11px] font-semibold py-1.5 rounded-lg bg-[#7c3aed]/15 hover:bg-[#7c3aed]/25 border border-[#7c3aed]/40 text-[#a78bfa] transition-colors cursor-pointer"
+      >
+        {isPaid ? 'Buy more credits / change plan' : 'Upgrade — get ZYVA credits'}
+      </button>
+
+      {showPlans && (
+        <div className="mt-3 space-y-2">
+          {data.plans.map(p => (
+            <a
+              key={p.id}
+              href={p.paylink || undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid={`plan-${p.id}`}
+              onClick={(e) => { if (!p.paylink) { e.preventDefault(); } }}
+              className={`block rounded-lg border p-2.5 transition-colors ${p.paylink ? 'border-[#3c3c3c] hover:border-[#7c3aed]/60 cursor-pointer' : 'border-[#2b2d31] opacity-50 cursor-not-allowed'}`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] font-semibold text-white">{p.name}</span>
+                <span className="text-[12px] text-[#4ec9b0] font-mono">{p.priceUsd === 0 ? 'Free' : `$${p.priceUsd}/mo`}</span>
+              </div>
+              <div className="text-[10px] text-zinc-500 mt-0.5">{p.credits} credits · {p.perks.slice(1).join(' · ') || p.perks[0]}</div>
+              {!p.paylink && <div className="text-[9px] text-amber-500/70 mt-1">Checkout not configured yet</div>}
+            </a>
+          ))}
+          <p className="text-[9px] text-zinc-600 text-center pt-1">Secure crypto/card checkout via Helio</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FileTreeItem({ node, depth, store }: { node: FileNode; depth: number; store: any }) {
   const isFolder = node.type === 'folder';
   const isExpanded = !!store.expandedFolders[node.path];
@@ -378,6 +459,7 @@ export default function SidebarPanel() {
         {/* --- WEB3 PROFILE PANEL --- */}
         {store.activeSidebarTab === 'profile' && (
           <div className="p-4 space-y-6 select-none">
+            <PlanUsage />
             <div>
               <div className="text-[11px] uppercase text-[#cccccc] font-semibold mb-3">Web3 Identity</div>
               <button 
